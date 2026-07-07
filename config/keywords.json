@@ -1,0 +1,20 @@
+{
+  "crops": {
+    "Mango": ["Cambodia mango market", "Cambodia mango export", "Cambodia mango price", "global mango market"],
+    "Cashew": ["Cambodia cashew market", "Cambodia cashew export", "Cambodia cashew price", "global cashew market"],
+    "Rice": ["Cambodia rice market", "Cambodia rice export", "Cambodia paddy price", "global rice market"],
+    "Vegetables": ["Cambodia vegetable market", "Cambodia vegetable price", "Cambodia vegetable farmers", "global vegetable market"]
+  },
+  "topics": {
+    "production": ["production", "harvest", "yield", "cultivation"],
+    "price": ["price", "cost", "inflation"],
+    "export": ["export", "shipment", "trade"],
+    "market demand": ["demand", "market", "buyer"],
+    "processing": ["processing", "factory", "value chain"],
+    "policy": ["policy", "ministry", "government", "strategy"],
+    "investment": ["investment", "loan", "finance"],
+    "climate risk": ["climate", "drought", "flood", "rainfall", "heat"],
+    "pest/disease": ["pest", "disease", "outbreak"],
+    "GHG/sustainability": ["emission", "methane", "carbon", "sustainable"]
+  }
+}
