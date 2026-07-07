@@ -1,20 +1,46 @@
 {
   "crops": {
-    "Mango": ["Cambodia mango market", "Cambodia mango export", "Cambodia mango price", "global mango market"],
-    "Cashew": ["Cambodia cashew market", "Cambodia cashew export", "Cambodia cashew price", "global cashew market"],
-    "Rice": ["Cambodia rice market", "Cambodia rice export", "Cambodia paddy price", "global rice market"],
-    "Vegetables": ["Cambodia vegetable market", "Cambodia vegetable price", "Cambodia vegetable farmers", "global vegetable market"]
+    "Mango": [
+      "Cambodia mango market OR export OR price",
+      "Cambodia mango processing value chain farmers",
+      "global mango market price export climate risk",
+      "mango pest disease drought flood agriculture"
+    ],
+    "Cashew": [
+      "Cambodia cashew market OR export OR price",
+      "Cambodia cashew processing value chain farmers",
+      "global cashew market price export climate risk",
+      "cashew nut pest disease drought flood agriculture"
+    ],
+    "Rice": [
+      "Cambodia rice market OR export OR paddy price",
+      "Cambodia rice farmers irrigation climate",
+      "global rice market price export food security",
+      "rice drought flood pest disease methane"
+    ],
+    "Vegetables": [
+      "Cambodia vegetable market price farmers",
+      "Cambodia vegetables supply chain irrigation",
+      "global vegetable market fresh produce price",
+      "vegetable drought flood pest disease agriculture"
+    ]
   },
   "topics": {
-    "production": ["production", "harvest", "yield", "cultivation"],
-    "price": ["price", "cost", "inflation"],
-    "export": ["export", "shipment", "trade"],
-    "market demand": ["demand", "market", "buyer"],
-    "processing": ["processing", "factory", "value chain"],
-    "policy": ["policy", "ministry", "government", "strategy"],
-    "investment": ["investment", "loan", "finance"],
-    "climate risk": ["climate", "drought", "flood", "rainfall", "heat"],
-    "pest/disease": ["pest", "disease", "outbreak"],
-    "GHG/sustainability": ["emission", "methane", "carbon", "sustainable"]
-  }
+    "production": ["production", "harvest", "yield", "cultivation", "planted", "farming"],
+    "price": ["price", "cost", "inflation", "wholesale", "retail", "farmgate"],
+    "export": ["export", "shipment", "trade", "market access", "border", "china", "vietnam", "thailand"],
+    "import": ["import", "imports"],
+    "market demand": ["demand", "market", "buyer", "consumer", "supply chain"],
+    "processing": ["processing", "factory", "value chain", "drying", "packaging", "milling"],
+    "policy": ["policy", "ministry", "government", "strategy", "regulation", "standard"],
+    "investment": ["investment", "loan", "finance", "credit", "private sector", "business"],
+    "climate risk": ["climate", "drought", "flood", "rainfall", "heat", "El Nino", "La Nina"],
+    "pest/disease": ["pest", "disease", "outbreak", "insect", "fungus"],
+    "GHG/sustainability": ["emission", "methane", "carbon", "sustainable", "greenhouse gas", "climate-smart"],
+    "farmer organization": ["cooperative", "farmer organization", "association", "community"]
+  },
+  "priority_domains": [
+    "akp.gov.kh", "maff.gov.kh", "moc.gov.kh", "khmertimeskh.com", "phnompenhpost.com",
+    "fao.org", "worldbank.org", "adb.org", "cgiar.org", "irri.org", "ifpri.org", "usda.gov", "reuters.com"
+  ]
 }

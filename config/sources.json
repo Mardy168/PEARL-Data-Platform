@@ -1,0 +1,9 @@
+{
+  "rss_sources": [
+    {"name": "AKP Cambodia", "url": "https://www.akp.gov.kh/rss.xml", "group": "Cambodia News"},
+    {"name": "Khmer Times", "url": "https://www.khmertimeskh.com/feed/", "group": "Cambodia News"},
+    {"name": "Phnom Penh Post", "url": "https://www.phnompenhpost.com/rss.xml", "group": "Cambodia News"},
+    {"name": "FAO News", "url": "https://www.fao.org/newsroom/rss/en", "group": "Global Trend"},
+    {"name": "World Bank Agriculture", "url": "https://www.worldbank.org/en/topic/agriculture/rss", "group": "Global Trend"}
+  ]
+}
