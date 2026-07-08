@@ -1,13 +1,11 @@
 import os
 from datetime import datetime, timedelta, timezone
-
 import pandas as pd
 
-from src.collector import collect_all_news
-from src.duplicate import add_duplicate_keys
-from src.summarizer import make_summary
-from src.drive import upload_file, download_file_by_name
-
+from src.collectors.collector import collect_all_news
+from src.drive.drive import upload_file, download_file_by_name
+from src.utils.duplicate import add_duplicate_keys
+from src.utils.summarizer import make_summary
 
 CAMBODIA_TZ = timezone(timedelta(hours=7))
 
@@ -18,22 +16,16 @@ OUTPUT_LOGS = "data/logs"
 MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
-
 def load_master():
     if os.path.exists(MASTER_FILE):
         return pd.read_csv(MASTER_FILE)
     return pd.DataFrame()
 
-
 def write_log(message):
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
-    log_path = f"{OUTPUT_LOGS}/daily_log.txt"
-
-    with open(log_path, "a", encoding="utf-8") as f:
+    with open(f"{OUTPUT_LOGS}/daily_log.txt", "a", encoding="utf-8") as f:
         f.write(message + "\n")
-
     print(message)
-
 
 def main():
     os.makedirs(OUTPUT_DAILY, exist_ok=True)
@@ -55,7 +47,6 @@ def main():
     df = add_duplicate_keys(df)
     df = df.drop_duplicates(subset=["title_id"])
     df = df.drop_duplicates(subset=["url_id"])
-
     df["Summary"] = df.apply(make_summary, axis=1)
 
     master = load_master()
@@ -90,11 +81,10 @@ def main():
     upload_file(daily_xlsx)
     upload_file(MASTER_FILE, MASTER_FILENAME)
 
-    write_log(f"Collected total after internal deduplication: {len(df)}")
+    write_log(f"Collected after internal deduplication: {len(df)}")
     write_log(f"New unique articles: {len(new_df)}")
     write_log(f"Master total records: {len(combined)}")
     write_log("Daily collection completed.")
-
 
 if __name__ == "__main__":
     main()
