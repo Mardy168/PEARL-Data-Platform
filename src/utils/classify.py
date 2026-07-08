@@ -1,58 +1,29 @@
-from urllib.parse import urlparse
+TOPIC_KEYWORDS = {
+    "Market": ["market", "price", "demand", "supply", "buyer", "seller"],
+    "Export": ["export", "shipment", "trade", "china", "vietnam", "eu", "japan", "import"],
+    "Production": ["production", "harvest", "yield", "farmer", "cultivation", "crop"],
+    "Climate Risk": ["drought", "flood", "rain", "climate", "heat", "weather", "storm"],
+    "Policy": ["policy", "ministry", "government", "strategy", "regulation", "law"],
+    "Investment": ["investment", "factory", "processing", "loan", "finance", "credit"],
+    "Pest/Disease": ["pest", "disease", "outbreak", "insect"],
+}
 
-CAMBODIA_TERMS = [
-    "cambodia", "cambodian", ".kh", "phnom penh", "kampong thom", "siem reap",
-    "preah vihear", "oddar meanchey", "maff", "ministry of agriculture"
-]
 
-
-def classify_topic(text, topics):
+def classify_topic(text):
     text = str(text).lower()
-    found = []
-    for topic, words in topics.items():
-        if any(str(w).lower() in text for w in words):
-            found.append(topic)
-    return "; ".join(found) if found else "general"
+    topics = []
+
+    for topic, keywords in TOPIC_KEYWORDS.items():
+        if any(k in text for k in keywords):
+            topics.append(topic)
+
+    return "; ".join(topics) if topics else "General"
 
 
-def classify_crop(text, crop_names):
+def detect_country(text):
     text = str(text).lower()
-    for crop in crop_names:
-        crop_l = crop.lower()
-        if crop_l in text or (crop_l == "vegetables" and "vegetable" in text):
-            return crop
-    return "Unclassified"
 
+    if "cambodia" in text or "phnom penh" in text or "khmer" in text:
+        return "Cambodia"
 
-def source_group(title, url):
-    text = f"{title} {url}".lower()
-    return "Cambodia News" if any(t in text for t in CAMBODIA_TERMS) else "Global Trend"
-
-
-def get_domain(url):
-    try:
-        return urlparse(url).netloc.replace("www.", "")
-    except Exception:
-        return ""
-
-
-def relevance_score(row, priority_domains=None):
-    text = f"{row.get('title','')} {row.get('summary','')} {row.get('url','')}".lower()
-    keywords = [
-        "cambodia", "mango", "cashew", "rice", "vegetable", "price", "market", "export",
-        "farmer", "climate", "drought", "flood", "policy", "investment", "processing",
-        "pest", "disease", "ghg", "methane", "sustainable"
-    ]
-    score = sum(1 for k in keywords if k in text)
-    domain = get_domain(row.get("url", ""))
-    if priority_domains and any(d in domain for d in priority_domains):
-        score += 3
-    if row.get("source_group") == "Cambodia News":
-        score += 2
-    return score
-
-
-def make_summary(title, summary="", max_chars=350):
-    text = (summary or title or "").strip()
-    text = " ".join(text.split())
-    return text[:max_chars] + ("..." if len(text) > max_chars else "")
+    return "Global"
