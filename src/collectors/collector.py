@@ -1,48 +1,23 @@
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
-
 import feedparser
 import pandas as pd
 
-from src.classifier import classify_topic, detect_country
-from src.duplicate import clean_text
-
+from src.utils.classifier import classify_topic, detect_country
+from src.utils.duplicate import clean_text
 
 CAMBODIA_TZ = timezone(timedelta(hours=7))
 
-
 CROPS = {
-    "Mango": [
-        "Cambodia mango export",
-        "Cambodia mango market",
-        "Cambodia mango price",
-        "global mango market",
-    ],
-    "Cashew": [
-        "Cambodia cashew export",
-        "Cambodia cashew market",
-        "Cambodia cashew price",
-        "global cashew market",
-    ],
-    "Rice": [
-        "Cambodia rice export",
-        "Cambodia rice market",
-        "Cambodia paddy price",
-        "global rice market",
-    ],
-    "Vegetables": [
-        "Cambodia vegetable price",
-        "Cambodia vegetable market",
-        "Cambodia fresh vegetables",
-        "global vegetable market",
-    ],
+    "Mango": ["Cambodia mango export", "Cambodia mango market", "Cambodia mango price", "global mango market"],
+    "Cashew": ["Cambodia cashew export", "Cambodia cashew market", "Cambodia cashew price", "global cashew market"],
+    "Rice": ["Cambodia rice export", "Cambodia rice market", "Cambodia paddy price", "global rice market"],
+    "Vegetables": ["Cambodia vegetable price", "Cambodia vegetable market", "Cambodia fresh vegetables", "global vegetable market"],
 }
-
 
 def google_news_rss(query, crop):
     rss_url = "https://news.google.com/rss/search?q=" + quote_plus(query)
     feed = feedparser.parse(rss_url)
-
     rows = []
 
     for entry in feed.entries[:50]:
@@ -50,7 +25,6 @@ def google_news_rss(query, crop):
         summary_raw = clean_text(entry.get("summary", ""))
         url = entry.get("link", "")
         published = entry.get("published", "")
-
         text_all = f"{title} {summary_raw}"
 
         rows.append({
@@ -71,13 +45,10 @@ def google_news_rss(query, crop):
 
     return rows
 
-
 def collect_all_news():
     rows = []
-
     for crop, queries in CROPS.items():
         for query in queries:
             print(f"Collecting: {query}")
             rows.extend(google_news_rss(query, crop))
-
     return pd.DataFrame(rows)
