@@ -28,12 +28,8 @@ def load_master():
 
 def write_log(message):
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
-
-    log_path = f"{OUTPUT_LOGS}/daily_log.txt"
-
-    with open(log_path, "a", encoding="utf-8") as f:
+    with open(f"{OUTPUT_LOGS}/daily_log.txt", "a", encoding="utf-8") as f:
         f.write(message + "\n")
-
     print(message)
 
 
@@ -63,7 +59,6 @@ def main():
 
     raw_count = len(df)
 
-    # Internal daily duplicate removal
     df = add_duplicate_keys(df)
     df = df.drop_duplicates(subset=["title_id"])
     df = df.drop_duplicates(subset=["url_id"])
@@ -71,7 +66,7 @@ def main():
 
     df["Summary"] = df.apply(make_summary, axis=1)
 
-    daily_all_count = len(df)
+    daily_unique_count = len(df)
 
     master = load_master()
 
@@ -88,63 +83,44 @@ def main():
     else:
         new_df = df.copy()
 
-    new_count = len(new_df)
-
-    # Update master database with only new records
     combined = pd.concat([master, new_df], ignore_index=True)
     combined = add_duplicate_keys(combined)
     combined = combined.drop_duplicates(subset=["title_id"])
     combined = combined.drop_duplicates(subset=["url_id"])
     combined = remove_similar_titles(combined, threshold=0.92)
 
-    master_count = len(combined)
-
     combined.to_csv(MASTER_FILE, index=False, encoding="utf-8-sig")
 
-    # Output files
-    daily_all_csv = f"{OUTPUT_DAILY}/PEARL_daily_all_news_{today}.csv"
-    daily_all_xlsx = f"{OUTPUT_DAILY}/PEARL_daily_all_news_{today}.xlsx"
-
-    daily_new_csv = f"{OUTPUT_DAILY}/PEARL_daily_new_news_{today}.csv"
-    daily_new_xlsx = f"{OUTPUT_DAILY}/PEARL_daily_new_news_{today}.xlsx"
-
+    daily_csv = f"{OUTPUT_DAILY}/PEARL_daily_news_{today}.csv"
+    daily_xlsx = f"{OUTPUT_DAILY}/PEARL_daily_news_{today}.xlsx"
     daily_docx = f"{OUTPUT_DAILY}/PEARL_daily_summary_{today}.docx"
     daily_log = f"{OUTPUT_LOGS}/PEARL_daily_log_{today}.txt"
 
-    # All daily news after internal duplicate removal
-    df.to_csv(daily_all_csv, index=False, encoding="utf-8-sig")
-    df.to_excel(daily_all_xlsx, index=False)
+    # Daily output = unique daily news after duplicate cleaning
+    df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
+    df.to_excel(daily_xlsx, index=False)
 
-    # Only new unique news compared with master
-    new_df.to_csv(daily_new_csv, index=False, encoding="utf-8-sig")
-    new_df.to_excel(daily_new_xlsx, index=False)
-
-    # Word summary uses all daily news, not only new news
+    # Daily Word = one page, Cambodia half + Global half, no links
     create_daily_word_report(df, daily_docx, today)
 
     with open(daily_log, "w", encoding="utf-8") as f:
         f.write("PEARL Daily News Log\n")
         f.write(f"Run time Cambodia: {run_time}\n")
         f.write(f"Raw collected articles: {raw_count}\n")
-        f.write(f"All daily articles after internal duplicate removal: {daily_all_count}\n")
-        f.write(f"New unique articles compared with master: {new_count}\n")
-        f.write(f"Master total records: {master_count}\n")
+        f.write(f"Daily unique articles: {daily_unique_count}\n")
+        f.write(f"New unique articles added to master: {len(new_df)}\n")
+        f.write(f"Master total records: {len(combined)}\n")
 
-    # Upload all outputs
-    upload_file(daily_all_csv)
-    upload_file(daily_all_xlsx)
-
-    upload_file(daily_new_csv)
-    upload_file(daily_new_xlsx)
-
+    upload_file(daily_csv)
+    upload_file(daily_xlsx)
     upload_file(daily_docx)
     upload_file(MASTER_FILE, MASTER_FILENAME)
     upload_file(daily_log)
 
     write_log(f"Raw collected articles: {raw_count}")
-    write_log(f"All daily articles after internal duplicate removal: {daily_all_count}")
-    write_log(f"New unique articles compared with master: {new_count}")
-    write_log(f"Master total records: {master_count}")
+    write_log(f"Daily unique articles: {daily_unique_count}")
+    write_log(f"New unique articles added to master: {len(new_df)}")
+    write_log(f"Master total records: {len(combined)}")
     write_log("Daily collection completed successfully.")
 
 
