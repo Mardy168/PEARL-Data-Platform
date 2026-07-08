@@ -1,201 +1,58 @@
 import os
-import re
-import hashlib
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote_plus
 
-import feedparser
 import pandas as pd
 
-from src.drive.upload import upload_file, download_file_by_name
+from src.collector import collect_all_news
+from src.duplicate import add_duplicate_keys
+from src.summarizer import make_summary
+from src.drive import upload_file, download_file_by_name
 
 
 CAMBODIA_TZ = timezone(timedelta(hours=7))
 
 OUTPUT_DAILY = "data/daily"
 OUTPUT_MASTER = "data/master"
+OUTPUT_LOGS = "data/logs"
 
 MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
 
-CROPS = {
-    "Mango": [
-        "Cambodia mango export",
-        "Cambodia mango market",
-        "Cambodia mango price",
-        "global mango market",
-    ],
-    "Cashew": [
-        "Cambodia cashew export",
-        "Cambodia cashew market",
-        "Cambodia cashew price",
-        "global cashew market",
-    ],
-    "Rice": [
-        "Cambodia rice export",
-        "Cambodia rice market",
-        "Cambodia paddy price",
-        "global rice market",
-    ],
-    "Vegetables": [
-        "Cambodia vegetable price",
-        "Cambodia vegetable market",
-        "Cambodia fresh vegetables",
-        "global vegetable market",
-    ],
-}
-
-
-TOPIC_KEYWORDS = {
-    "Market": ["market", "price", "demand", "supply", "buyer", "seller", "retail"],
-    "Export": ["export", "shipment", "trade", "china", "vietnam", "eu", "japan", "import"],
-    "Production": ["production", "harvest", "yield", "farmer", "cultivation", "crop"],
-    "Climate Risk": ["drought", "flood", "rain", "climate", "heat", "weather", "storm"],
-    "Policy": ["policy", "ministry", "government", "strategy", "regulation", "law"],
-    "Investment": ["investment", "factory", "processing", "loan", "finance", "credit"],
-    "Pest/Disease": ["pest", "disease", "outbreak", "insect"],
-}
-
-
-def clean_text(text):
-    text = re.sub(r"<.*?>", " ", str(text))
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def normalize_title(title):
-    title = clean_text(title).lower()
-    title = re.sub(r"[^a-z0-9\s]", " ", title)
-    title = re.sub(r"\s+", " ", title)
-    return title.strip()
-
-
-def normalize_url(url):
-    url = str(url).strip()
-    url = url.split("&")[0]
-    url = url.split("?")[0]
-    return url.strip()
-
-
-def make_hash(value):
-    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
-
-
-def classify_topic(text):
-    text = str(text).lower()
-    topics = []
-
-    for topic, keywords in TOPIC_KEYWORDS.items():
-        if any(keyword in text for keyword in keywords):
-            topics.append(topic)
-
-    return "; ".join(topics) if topics else "General"
-
-
-def detect_country(text):
-    text = str(text).lower()
-
-    if "cambodia" in text or "phnom penh" in text or "khmer" in text:
-        return "Cambodia"
-
-    return "Global"
-
-
-def make_summary(row):
-    title = clean_text(row.get("title", ""))
-    crop = row.get("crop", "")
-    topic = row.get("topic", "General")
-    country = row.get("country", "Global")
-
-    if not title:
-        return ""
-
-    return (
-        f"{country} {crop} news related to {str(topic).lower()}. "
-        f"Key point: {title}"
-    )[:500]
-
-
-def google_news_rss(query, crop):
-    rss_url = "https://news.google.com/rss/search?q=" + quote_plus(query)
-    feed = feedparser.parse(rss_url)
-
-    rows = []
-
-    for entry in feed.entries[:50]:
-        title = clean_text(entry.get("title", ""))
-        summary_raw = clean_text(entry.get("summary", ""))
-        url = entry.get("link", "")
-        published = entry.get("published", "")
-
-        text_all = f"{title} {summary_raw}"
-
-        rows.append({
-            "date_collected": datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d"),
-            "run_time_cambodia": datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-            "published_date": published,
-            "crop": crop,
-            "country": detect_country(text_all),
-            "topic": classify_topic(text_all),
-            "title": title,
-            "Summary": "",
-            "source": "Google News RSS",
-            "language": "en",
-            "url": url,
-            "search_query": query,
-            "summary_raw": summary_raw,
-        })
-
-    return rows
-
-
 def load_master():
     if os.path.exists(MASTER_FILE):
         return pd.read_csv(MASTER_FILE)
-
     return pd.DataFrame()
 
 
-def ensure_required_columns(df):
-    for col in ["title", "url"]:
-        if col not in df.columns:
-            df[col] = ""
+def write_log(message):
+    os.makedirs(OUTPUT_LOGS, exist_ok=True)
+    log_path = f"{OUTPUT_LOGS}/daily_log.txt"
 
-    df["clean_title"] = df["title"].apply(normalize_title)
-    df["clean_url"] = df["url"].apply(normalize_url)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(message + "\n")
 
-    df["title_id"] = df["clean_title"].apply(make_hash)
-    df["url_id"] = df["clean_url"].apply(make_hash)
-
-    df["article_id"] = df["title_id"]
-
-    return df
+    print(message)
 
 
 def main():
     os.makedirs(OUTPUT_DAILY, exist_ok=True)
     os.makedirs(OUTPUT_MASTER, exist_ok=True)
+    os.makedirs(OUTPUT_LOGS, exist_ok=True)
 
     today = datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d")
 
+    write_log(f"===== Daily run started: {today} =====")
+
     download_file_by_name(MASTER_FILENAME, MASTER_FILE)
 
-    rows = []
-
-    for crop, queries in CROPS.items():
-        for query in queries:
-            print(f"Collecting: {query}")
-            rows.extend(google_news_rss(query, crop))
-
-    df = pd.DataFrame(rows)
+    df = collect_all_news()
 
     if df.empty:
-        print("No news collected.")
+        write_log("No news collected.")
         return
 
-    df = ensure_required_columns(df)
-
+    df = add_duplicate_keys(df)
     df = df.drop_duplicates(subset=["title_id"])
     df = df.drop_duplicates(subset=["url_id"])
 
@@ -204,7 +61,7 @@ def main():
     master = load_master()
 
     if not master.empty:
-        master = ensure_required_columns(master)
+        master = add_duplicate_keys(master)
 
         existing_titles = set(master["title_id"].astype(str))
         existing_urls = set(master["url_id"].astype(str))
@@ -216,11 +73,8 @@ def main():
     else:
         new_df = df.copy()
 
-    print(f"Collected after internal deduplication: {len(df)}")
-    print(f"New unique articles compared with master: {len(new_df)}")
-
     combined = pd.concat([master, new_df], ignore_index=True)
-    combined = ensure_required_columns(combined)
+    combined = add_duplicate_keys(combined)
     combined = combined.drop_duplicates(subset=["title_id"])
     combined = combined.drop_duplicates(subset=["url_id"])
 
@@ -236,10 +90,10 @@ def main():
     upload_file(daily_xlsx)
     upload_file(MASTER_FILE, MASTER_FILENAME)
 
-    print("Daily collection completed.")
-    print(f"Daily CSV: {daily_csv}")
-    print(f"Daily Excel: {daily_xlsx}")
-    print(f"Master updated: {MASTER_FILE}")
+    write_log(f"Collected total after internal deduplication: {len(df)}")
+    write_log(f"New unique articles: {len(new_df)}")
+    write_log(f"Master total records: {len(combined)}")
+    write_log("Daily collection completed.")
 
 
 if __name__ == "__main__":
