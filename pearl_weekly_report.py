@@ -3,8 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from docx import Document
+from docx.shared import Inches, Pt
 
 from src.drive.drive import upload_file, download_file_by_name
+from src.utils.duplicate import add_duplicate_keys, remove_similar_titles
 
 
 CAMBODIA_TZ = timezone(timedelta(hours=7))
@@ -14,6 +16,44 @@ OUTPUT_MASTER = "data/master"
 
 MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
+
+
+def add_weekly_page(doc, title, df, max_items=12):
+    doc.add_heading(title, level=1)
+
+    if df.empty:
+        doc.add_paragraph("No major news identified.")
+        return
+
+    doc.add_paragraph(f"Total unique articles this week: {len(df)}")
+
+    if "crop" in df.columns:
+        crop_summary = ", ".join(
+            [f"{crop}: {count}" for crop, count in df["crop"].value_counts().items()]
+        )
+        doc.add_paragraph(f"Crop summary: {crop_summary}")
+
+    if "topic" in df.columns:
+        topic_summary = ", ".join(
+            [f"{topic}: {count}" for topic, count in df["topic"].value_counts().items()]
+        )
+        doc.add_paragraph(f"Topic summary: {topic_summary}")
+
+    doc.add_heading("Key News", level=2)
+
+    for _, row in df.head(max_items).iterrows():
+        news_title = str(row.get("title", "")).strip()
+        summary = str(row.get("Summary", "")).strip()
+        crop = str(row.get("crop", "")).strip()
+        topic = str(row.get("topic", "")).strip()
+
+        if news_title:
+            doc.add_paragraph(f"• {news_title}")
+
+        if summary:
+            doc.add_paragraph(f"  {summary}")
+
+        doc.add_paragraph(f"  Crop: {crop} | Topic: {topic}")
 
 
 def main():
@@ -34,6 +74,7 @@ def main():
 
     today = datetime.now(CAMBODIA_TZ).date()
     start_date = today - timedelta(days=7)
+    report_date = today.strftime("%Y-%m-%d")
 
     df["date_collected_dt"] = pd.to_datetime(
         df["date_collected"],
@@ -46,59 +87,47 @@ def main():
         print("No weekly records found.")
         return
 
-    report_date = today.strftime("%Y-%m-%d")
+    weekly = add_duplicate_keys(weekly)
+    weekly = weekly.drop_duplicates(subset=["title_id"])
+    weekly = weekly.drop_duplicates(subset=["url_id"])
+    weekly = remove_similar_titles(weekly, threshold=0.92)
 
     weekly_xlsx = f"{OUTPUT_WEEKLY}/PEARL_weekly_news_{report_date}.xlsx"
-    weekly_docx = f"{OUTPUT_WEEKLY}/PEARL_weekly_report_{report_date}.docx"
+    weekly_docx = f"{OUTPUT_WEEKLY}/PEARL_weekly_summary_{report_date}.docx"
 
     weekly.to_excel(weekly_xlsx, index=False)
 
     doc = Document()
 
-    doc.add_heading("PEARL Weekly Agriculture News Report", 0)
+    section = doc.sections[0]
+    section.top_margin = Inches(0.45)
+    section.bottom_margin = Inches(0.45)
+    section.left_margin = Inches(0.55)
+    section.right_margin = Inches(0.55)
+
+    style = doc.styles["Normal"]
+    style.font.size = Pt(8)
+
+    doc.add_heading("PEARL Weekly Agriculture News Summary", 0)
     doc.add_paragraph(f"Report date: {report_date}")
     doc.add_paragraph(f"Coverage period: {start_date} to {today}")
-    doc.add_paragraph(f"Total unique records: {len(weekly)}")
-
-    doc.add_heading("1. Executive Summary", level=1)
     doc.add_paragraph(
-        f"This weekly report summarizes {len(weekly)} unique agriculture-related news records "
-        "collected for PEARL commonality crops: mango, cashew, rice, and vegetables."
+        "Two-page summary. News links are excluded from this Word report and kept in Excel."
     )
 
-    doc.add_heading("2. News Statistics", level=1)
+    cambodia = weekly[
+        weekly["country"].astype(str).str.lower() == "cambodia"
+    ].copy()
 
-    if "crop" in weekly.columns:
-        doc.add_heading("Articles by Crop", level=2)
-        for crop, count in weekly["crop"].value_counts().items():
-            doc.add_paragraph(f"{crop}: {count}")
+    global_news = weekly[
+        weekly["country"].astype(str).str.lower() != "cambodia"
+    ].copy()
 
-    if "topic" in weekly.columns:
-        doc.add_heading("Articles by Topic", level=2)
-        for topic, count in weekly["topic"].value_counts().items():
-            doc.add_paragraph(f"{topic}: {count}")
+    add_weekly_page(doc, "Page 1: Cambodia News", cambodia, max_items=12)
 
-    if "country" in weekly.columns:
-        doc.add_heading("Articles by Country", level=2)
-        for country, count in weekly["country"].value_counts().items():
-            doc.add_paragraph(f"{country}: {count}")
+    doc.add_page_break()
 
-    doc.add_heading("3. Summary by Crop", level=1)
-
-    for crop, crop_df in weekly.groupby("crop"):
-        doc.add_heading(f"{crop} ({len(crop_df)} articles)", level=2)
-
-        for _, row in crop_df.head(10).iterrows():
-            doc.add_paragraph(f"• {row.get('title', '')}")
-            doc.add_paragraph(f"  Summary: {row.get('Summary', '')}")
-            doc.add_paragraph(f"  Topic: {row.get('topic', '')}")
-            doc.add_paragraph(f"  Source: {row.get('source', '')}")
-            doc.add_paragraph(f"  Link: {row.get('url', '')}")
-
-    doc.add_heading("4. References", level=1)
-
-    for _, row in weekly.iterrows():
-        doc.add_paragraph(f"{row.get('title', '')} - {row.get('url', '')}")
+    add_weekly_page(doc, "Page 2: Global News", global_news, max_items=12)
 
     doc.save(weekly_docx)
 
@@ -106,6 +135,8 @@ def main():
     upload_file(weekly_docx)
 
     print("Weekly report completed successfully.")
+    print(f"Weekly Excel: {weekly_xlsx}")
+    print(f"Weekly Word: {weekly_docx}")
 
 
 if __name__ == "__main__":
