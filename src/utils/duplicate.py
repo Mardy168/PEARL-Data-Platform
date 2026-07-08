@@ -1,12 +1,10 @@
 import re
 import hashlib
 
-
 def clean_text(text):
     text = re.sub(r"<.*?>", " ", str(text))
     text = re.sub(r"\s+", " ", text)
     return text.strip()
-
 
 def normalize_title(title):
     title = clean_text(title).lower()
@@ -14,22 +12,18 @@ def normalize_title(title):
     title = re.sub(r"\s+", " ", title)
     return title.strip()
 
-
 def normalize_url(url):
     url = str(url).strip()
     url = url.split("?")[0]
     url = url.split("&")[0]
     return url.strip()
 
-
 def make_hash(value):
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
-
 
 def add_duplicate_keys(df):
     if "title" not in df.columns:
         df["title"] = ""
-
     if "url" not in df.columns:
         df["url"] = ""
 
