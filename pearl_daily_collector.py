@@ -1,11 +1,13 @@
 import os
 from datetime import datetime, timedelta, timezone
+
 import pandas as pd
 
 from src.collectors.collector import collect_all_news
 from src.drive.drive import upload_file, download_file_by_name
-from src.utils.duplicate import add_duplicate_keys
+from src.utils.duplicate import add_duplicate_keys, remove_similar_titles
 from src.utils.summarizer import make_summary
+
 
 CAMBODIA_TZ = timezone(timedelta(hours=7))
 
@@ -16,16 +18,23 @@ OUTPUT_LOGS = "data/logs"
 MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
+
 def load_master():
     if os.path.exists(MASTER_FILE):
         return pd.read_csv(MASTER_FILE)
     return pd.DataFrame()
 
+
 def write_log(message):
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
-    with open(f"{OUTPUT_LOGS}/daily_log.txt", "a", encoding="utf-8") as f:
+
+    log_path = f"{OUTPUT_LOGS}/daily_log.txt"
+
+    with open(log_path, "a", encoding="utf-8") as f:
         f.write(message + "\n")
+
     print(message)
+
 
 def main():
     os.makedirs(OUTPUT_DAILY, exist_ok=True)
@@ -33,10 +42,17 @@ def main():
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
 
     today = datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d")
+    run_time = datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-    write_log(f"===== Daily run started: {today} =====")
+    write_log("")
+    write_log(f"===== PEARL Daily News Run Started: {run_time} =====")
 
-    download_file_by_name(MASTER_FILENAME, MASTER_FILE)
+    downloaded = download_file_by_name(MASTER_FILENAME, MASTER_FILE)
+
+    if downloaded:
+        write_log("Master database downloaded from Google Drive.")
+    else:
+        write_log("No existing master database found. Creating a new one.")
 
     df = collect_all_news()
 
@@ -44,10 +60,16 @@ def main():
         write_log("No news collected.")
         return
 
+    raw_count = len(df)
+
     df = add_duplicate_keys(df)
     df = df.drop_duplicates(subset=["title_id"])
     df = df.drop_duplicates(subset=["url_id"])
+    df = remove_similar_titles(df, threshold=0.92)
+
     df["Summary"] = df.apply(make_summary, axis=1)
+
+    cleaned_count = len(df)
 
     master = load_master()
 
@@ -64,27 +86,44 @@ def main():
     else:
         new_df = df.copy()
 
+    new_count = len(new_df)
+
     combined = pd.concat([master, new_df], ignore_index=True)
     combined = add_duplicate_keys(combined)
     combined = combined.drop_duplicates(subset=["title_id"])
     combined = combined.drop_duplicates(subset=["url_id"])
+    combined = remove_similar_titles(combined, threshold=0.92)
+
+    master_count = len(combined)
 
     combined.to_csv(MASTER_FILE, index=False, encoding="utf-8-sig")
 
     daily_csv = f"{OUTPUT_DAILY}/PEARL_daily_news_{today}.csv"
     daily_xlsx = f"{OUTPUT_DAILY}/PEARL_daily_news_{today}.xlsx"
+    daily_log = f"{OUTPUT_LOGS}/PEARL_daily_log_{today}.txt"
 
     new_df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
     new_df.to_excel(daily_xlsx, index=False)
 
+    with open(daily_log, "w", encoding="utf-8") as f:
+        f.write(f"PEARL Daily News Log\n")
+        f.write(f"Run time Cambodia: {run_time}\n")
+        f.write(f"Raw collected articles: {raw_count}\n")
+        f.write(f"After internal duplicate removal: {cleaned_count}\n")
+        f.write(f"New unique articles today: {new_count}\n")
+        f.write(f"Master total records: {master_count}\n")
+
     upload_file(daily_csv)
     upload_file(daily_xlsx)
     upload_file(MASTER_FILE, MASTER_FILENAME)
+    upload_file(daily_log)
 
-    write_log(f"Collected after internal deduplication: {len(df)}")
-    write_log(f"New unique articles: {len(new_df)}")
-    write_log(f"Master total records: {len(combined)}")
-    write_log("Daily collection completed.")
+    write_log(f"Raw collected articles: {raw_count}")
+    write_log(f"After internal duplicate removal: {cleaned_count}")
+    write_log(f"New unique articles today: {new_count}")
+    write_log(f"Master total records: {master_count}")
+    write_log("Daily collection completed successfully.")
+
 
 if __name__ == "__main__":
     main()
