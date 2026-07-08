@@ -7,6 +7,7 @@ from src.collectors.collector import collect_all_news
 from src.drive.drive import upload_file, download_file_by_name
 from src.utils.duplicate import add_duplicate_keys, remove_similar_titles
 from src.utils.summarizer import make_summary
+from src.reports.daily import create_daily_word_report
 
 
 CAMBODIA_TZ = timezone(timedelta(hours=7))
@@ -27,12 +28,8 @@ def load_master():
 
 def write_log(message):
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
-
-    log_path = f"{OUTPUT_LOGS}/daily_log.txt"
-
-    with open(log_path, "a", encoding="utf-8") as f:
+    with open(f"{OUTPUT_LOGS}/daily_log.txt", "a", encoding="utf-8") as f:
         f.write(message + "\n")
-
     print(message)
 
 
@@ -47,12 +44,7 @@ def main():
     write_log("")
     write_log(f"===== PEARL Daily News Run Started: {run_time} =====")
 
-    downloaded = download_file_by_name(MASTER_FILENAME, MASTER_FILE)
-
-    if downloaded:
-        write_log("Master database downloaded from Google Drive.")
-    else:
-        write_log("No existing master database found. Creating a new one.")
+    download_file_by_name(MASTER_FILENAME, MASTER_FILE)
 
     df = collect_all_news()
 
@@ -69,13 +61,10 @@ def main():
 
     df["Summary"] = df.apply(make_summary, axis=1)
 
-    cleaned_count = len(df)
-
     master = load_master()
 
     if not master.empty:
         master = add_duplicate_keys(master)
-
         existing_titles = set(master["title_id"].astype(str))
         existing_urls = set(master["url_id"].astype(str))
 
@@ -86,42 +75,40 @@ def main():
     else:
         new_df = df.copy()
 
-    new_count = len(new_df)
-
     combined = pd.concat([master, new_df], ignore_index=True)
     combined = add_duplicate_keys(combined)
     combined = combined.drop_duplicates(subset=["title_id"])
     combined = combined.drop_duplicates(subset=["url_id"])
     combined = remove_similar_titles(combined, threshold=0.92)
 
-    master_count = len(combined)
-
     combined.to_csv(MASTER_FILE, index=False, encoding="utf-8-sig")
 
     daily_csv = f"{OUTPUT_DAILY}/PEARL_daily_news_{today}.csv"
     daily_xlsx = f"{OUTPUT_DAILY}/PEARL_daily_news_{today}.xlsx"
+    daily_docx = f"{OUTPUT_DAILY}/PEARL_daily_summary_{today}.docx"
     daily_log = f"{OUTPUT_LOGS}/PEARL_daily_log_{today}.txt"
 
     new_df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
     new_df.to_excel(daily_xlsx, index=False)
 
+    create_daily_word_report(new_df, daily_docx, today)
+
     with open(daily_log, "w", encoding="utf-8") as f:
-        f.write(f"PEARL Daily News Log\n")
+        f.write("PEARL Daily News Log\n")
         f.write(f"Run time Cambodia: {run_time}\n")
         f.write(f"Raw collected articles: {raw_count}\n")
-        f.write(f"After internal duplicate removal: {cleaned_count}\n")
-        f.write(f"New unique articles today: {new_count}\n")
-        f.write(f"Master total records: {master_count}\n")
+        f.write(f"New unique articles today: {len(new_df)}\n")
+        f.write(f"Master total records: {len(combined)}\n")
 
     upload_file(daily_csv)
     upload_file(daily_xlsx)
+    upload_file(daily_docx)
     upload_file(MASTER_FILE, MASTER_FILENAME)
     upload_file(daily_log)
 
     write_log(f"Raw collected articles: {raw_count}")
-    write_log(f"After internal duplicate removal: {cleaned_count}")
-    write_log(f"New unique articles today: {new_count}")
-    write_log(f"Master total records: {master_count}")
+    write_log(f"New unique articles today: {len(new_df)}")
+    write_log(f"Master total records: {len(combined)}")
     write_log("Daily collection completed successfully.")
 
 
