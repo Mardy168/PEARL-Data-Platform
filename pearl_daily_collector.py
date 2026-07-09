@@ -1,11 +1,13 @@
 import os
+import re
+import hashlib
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
 from src.collectors.collector import collect_all_news
 from src.drive.drive import upload_file, download_file_by_name
-from src.utils.duplicate import add_duplicate_keys, remove_similar_titles
 from src.utils.summarizer import make_summary
 from src.reports.daily import create_daily_word_report
 
@@ -33,6 +35,67 @@ def write_log(message):
     print(message)
 
 
+def clean_text(value):
+    value = str(value or "").lower().strip()
+    value = re.sub(r"<.*?>", " ", value)
+    value = re.sub(r"[^a-z0-9\u1780-\u17ff]+", " ", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def clean_url(value):
+    value = str(value or "").strip()
+    return value.split("?")[0].split("#")[0]
+
+
+def get_domain(value):
+    try:
+        domain = urlparse(str(value)).netloc.lower()
+        domain = domain.replace("www.", "")
+        return domain
+    except Exception:
+        return ""
+
+
+def make_hash(value):
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def add_duplicate_keys(df):
+    if df.empty:
+        return df
+
+    df["clean_url"] = df["url"].apply(clean_url) if "url" in df.columns else ""
+    df["source_domain"] = df["clean_url"].apply(get_domain)
+    df["clean_title"] = df["title"].apply(clean_text) if "title" in df.columns else ""
+
+    df["url_id"] = df["clean_url"].apply(make_hash)
+    df["same_site_title_id"] = (
+        df["source_domain"].astype(str) + "|" + df["clean_title"].astype(str)
+    ).apply(make_hash)
+
+    df["article_id"] = (
+        df["clean_url"].astype(str) + "|" + df["source_domain"].astype(str) + "|" + df["clean_title"].astype(str)
+    ).apply(make_hash)
+
+    return df
+
+
+def clean_duplicates(df):
+    if df.empty:
+        return df
+
+    df = add_duplicate_keys(df)
+
+    # Remove exact same URL
+    df = df.drop_duplicates(subset=["url_id"])
+
+    # Remove same website + same clean title
+    df = df.drop_duplicates(subset=["same_site_title_id"])
+
+    return df
+
+
 def add_published_datetime(df):
     df["published_dt"] = pd.to_datetime(
         df.get("published_date", ""),
@@ -43,14 +106,10 @@ def add_published_datetime(df):
     return df
 
 
-def clean_duplicates(df):
-    if df.empty:
-        return df
-
-    df = add_duplicate_keys(df)
-    df = df.drop_duplicates(subset=["title_id"])
-    df = df.drop_duplicates(subset=["url_id"])
-    df = remove_similar_titles(df, threshold=0.92)
+def remove_timezone(df):
+    for col in df.columns:
+        if pd.api.types.is_datetime64tz_dtype(df[col]):
+            df[col] = df[col].dt.tz_localize(None)
     return df
 
 
@@ -59,10 +118,9 @@ def main():
     os.makedirs(OUTPUT_MASTER, exist_ok=True)
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
 
-    today = datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d")
     now = datetime.now(CAMBODIA_TZ)
+    today = now.strftime("%Y-%m-%d")
     start_time = now - timedelta(hours=24)
-
     run_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
     write_log("")
@@ -93,7 +151,6 @@ def main():
         return
 
     df = clean_duplicates(df)
-
     df["Summary"] = df.apply(make_summary, axis=1)
 
     daily_unique_count = len(df)
@@ -103,12 +160,12 @@ def main():
     if not master.empty:
         master = clean_duplicates(master)
 
-        existing_titles = set(master["title_id"].astype(str))
         existing_urls = set(master["url_id"].astype(str))
+        existing_site_titles = set(master["same_site_title_id"].astype(str))
 
         new_df = df[
-            (~df["title_id"].astype(str).isin(existing_titles))
-            & (~df["url_id"].astype(str).isin(existing_urls))
+            (~df["url_id"].astype(str).isin(existing_urls))
+            & (~df["same_site_title_id"].astype(str).isin(existing_site_titles))
         ].copy()
     else:
         new_df = df.copy()
@@ -125,10 +182,12 @@ def main():
     daily_docx = f"{OUTPUT_DAILY}/PEARL_daily_summary_{today}.docx"
     daily_log = f"{OUTPUT_LOGS}/PEARL_daily_log_{today}.txt"
 
-    new_df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
-    new_df.to_excel(daily_xlsx, index=False)
+    export_df = remove_timezone(new_df.copy())
 
-    create_daily_word_report(new_df, daily_docx, today)
+    export_df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
+    export_df.to_excel(daily_xlsx, index=False)
+
+    create_daily_word_report(export_df, daily_docx, today)
 
     with open(daily_log, "w", encoding="utf-8") as f:
         f.write("PEARL Daily News Log\n")
