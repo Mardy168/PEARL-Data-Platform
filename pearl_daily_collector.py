@@ -20,6 +20,32 @@ MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
 
+def parse_news_datetime(df):
+    df["published_dt"] = pd.to_datetime(
+        df.get("published_date", ""),
+        errors="coerce",
+        utc=True
+    )
+
+    df["published_dt_kh"] = df["published_dt"].dt.tz_convert(CAMBODIA_TZ)
+    return df
+
+
+def filter_last_24_hours(df):
+    now = datetime.now(CAMBODIA_TZ)
+    start_time = now - timedelta(hours=24)
+
+    df = parse_news_datetime(df)
+
+    df = df[
+        df["published_dt_kh"].notna()
+        & (df["published_dt_kh"] >= start_time)
+        & (df["published_dt_kh"] <= now)
+    ].copy()
+
+    return df
+
+
 def load_master():
     if os.path.exists(MASTER_FILE):
         return pd.read_csv(MASTER_FILE)
@@ -44,12 +70,7 @@ def main():
     write_log("")
     write_log(f"===== PEARL Daily News Run Started: {run_time} =====")
 
-    downloaded = download_file_by_name(MASTER_FILENAME, MASTER_FILE)
-
-    if downloaded:
-        write_log("Master database downloaded from Google Drive.")
-    else:
-        write_log("No existing master database found. Creating a new one.")
+    download_file_by_name(MASTER_FILENAME, MASTER_FILE)
 
     df = collect_all_news()
 
@@ -59,6 +80,15 @@ def main():
 
     raw_count = len(df)
 
+    # Keep only articles published in the last 24 hours
+    df = filter_last_24_hours(df)
+    recent_count = len(df)
+
+    if df.empty:
+        write_log("No news published in the last 24 hours.")
+        return
+
+    # Remove duplicates inside today’s collection
     df = add_duplicate_keys(df)
     df = df.drop_duplicates(subset=["title_id"])
     df = df.drop_duplicates(subset=["url_id"])
@@ -77,12 +107,15 @@ def main():
         existing_urls = set(master["url_id"].astype(str))
 
         new_df = df[
-            (~df["title_id"].astype(str).isin(existing_titles)) &
-            (~df["url_id"].astype(str).isin(existing_urls))
+            (~df["title_id"].astype(str).isin(existing_titles))
+            & (~df["url_id"].astype(str).isin(existing_urls))
         ].copy()
     else:
         new_df = df.copy()
 
+    new_count = len(new_df)
+
+    # Update master only with new records
     combined = pd.concat([master, new_df], ignore_index=True)
     combined = add_duplicate_keys(combined)
     combined = combined.drop_duplicates(subset=["title_id"])
@@ -96,19 +129,19 @@ def main():
     daily_docx = f"{OUTPUT_DAILY}/PEARL_daily_summary_{today}.docx"
     daily_log = f"{OUTPUT_LOGS}/PEARL_daily_log_{today}.txt"
 
-    # Daily output = unique daily news after duplicate cleaning
-    df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
-    df.to_excel(daily_xlsx, index=False)
+    # Daily output = last 24 hours + not already in master
+    new_df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
+    new_df.to_excel(daily_xlsx, index=False)
 
-    # Daily Word = one page, Cambodia half + Global half, no links
-    create_daily_word_report(df, daily_docx, today)
+    create_daily_word_report(new_df, daily_docx, today)
 
     with open(daily_log, "w", encoding="utf-8") as f:
         f.write("PEARL Daily News Log\n")
         f.write(f"Run time Cambodia: {run_time}\n")
         f.write(f"Raw collected articles: {raw_count}\n")
-        f.write(f"Daily unique articles: {daily_unique_count}\n")
-        f.write(f"New unique articles added to master: {len(new_df)}\n")
+        f.write(f"Articles published in last 24 hours: {recent_count}\n")
+        f.write(f"Daily unique after duplicate removal: {daily_unique_count}\n")
+        f.write(f"New unique articles added to master: {new_count}\n")
         f.write(f"Master total records: {len(combined)}\n")
 
     upload_file(daily_csv)
@@ -118,8 +151,9 @@ def main():
     upload_file(daily_log)
 
     write_log(f"Raw collected articles: {raw_count}")
-    write_log(f"Daily unique articles: {daily_unique_count}")
-    write_log(f"New unique articles added to master: {len(new_df)}")
+    write_log(f"Articles published in last 24 hours: {recent_count}")
+    write_log(f"Daily unique after duplicate removal: {daily_unique_count}")
+    write_log(f"New unique articles added to master: {new_count}")
     write_log(f"Master total records: {len(combined)}")
     write_log("Daily collection completed successfully.")
 
