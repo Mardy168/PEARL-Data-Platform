@@ -18,6 +18,17 @@ MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
 
+def clean_duplicates(df):
+    if df.empty:
+        return df
+
+    df = add_duplicate_keys(df)
+    df = df.drop_duplicates(subset=["title_id"])
+    df = df.drop_duplicates(subset=["url_id"])
+    df = remove_similar_titles(df, threshold=0.92)
+    return df
+
+
 def add_monthly_page(doc, title, df, max_items=15):
     doc.add_heading(title, level=1)
 
@@ -95,23 +106,24 @@ def main():
     today = datetime.now(CAMBODIA_TZ).date()
     report_month = today.strftime("%Y-%m")
 
-    df["date_collected_dt"] = pd.to_datetime(
-        df["date_collected"],
-        errors="coerce"
-    ).dt.date
+    df["published_dt"] = pd.to_datetime(
+        df["published_date"],
+        errors="coerce",
+        utc=True
+    )
+
+    df["published_dt_kh"] = df["published_dt"].dt.tz_convert(CAMBODIA_TZ)
 
     monthly = df[
-        pd.to_datetime(df["date_collected"], errors="coerce").dt.strftime("%Y-%m") == report_month
+        df["published_dt_kh"].notna()
+        & (df["published_dt_kh"].dt.strftime("%Y-%m") == report_month)
     ].copy()
 
     if monthly.empty:
         print("No monthly records found.")
         return
 
-    monthly = add_duplicate_keys(monthly)
-    monthly = monthly.drop_duplicates(subset=["title_id"])
-    monthly = monthly.drop_duplicates(subset=["url_id"])
-    monthly = remove_similar_titles(monthly, threshold=0.92)
+    monthly = clean_duplicates(monthly)
 
     monthly_xlsx = f"{OUTPUT_MONTHLY}/PEARL_monthly_news_{report_month}.xlsx"
     monthly_docx = f"{OUTPUT_MONTHLY}/PEARL_monthly_summary_{report_month}.docx"
