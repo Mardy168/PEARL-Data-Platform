@@ -18,6 +18,17 @@ MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
 
+def clean_duplicates(df):
+    if df.empty:
+        return df
+
+    df = add_duplicate_keys(df)
+    df = df.drop_duplicates(subset=["title_id"])
+    df = df.drop_duplicates(subset=["url_id"])
+    df = remove_similar_titles(df, threshold=0.92)
+    return df
+
+
 def add_weekly_page(doc, title, df, max_items=12):
     doc.add_heading(title, level=1)
 
@@ -76,21 +87,25 @@ def main():
     start_date = today - timedelta(days=7)
     report_date = today.strftime("%Y-%m-%d")
 
-    df["date_collected_dt"] = pd.to_datetime(
-        df["date_collected"],
-        errors="coerce"
-    ).dt.date
+    df["published_dt"] = pd.to_datetime(
+        df["published_date"],
+        errors="coerce",
+        utc=True
+    )
 
-    weekly = df[df["date_collected_dt"] >= start_date].copy()
+    df["published_dt_kh"] = df["published_dt"].dt.tz_convert(CAMBODIA_TZ)
+
+    weekly = df[
+        df["published_dt_kh"].notna()
+        & (df["published_dt_kh"].dt.date >= start_date)
+        & (df["published_dt_kh"].dt.date <= today)
+    ].copy()
 
     if weekly.empty:
         print("No weekly records found.")
         return
 
-    weekly = add_duplicate_keys(weekly)
-    weekly = weekly.drop_duplicates(subset=["title_id"])
-    weekly = weekly.drop_duplicates(subset=["url_id"])
-    weekly = remove_similar_titles(weekly, threshold=0.92)
+    weekly = clean_duplicates(weekly)
 
     weekly_xlsx = f"{OUTPUT_WEEKLY}/PEARL_weekly_news_{report_date}.xlsx"
     weekly_docx = f"{OUTPUT_WEEKLY}/PEARL_weekly_summary_{report_date}.docx"
@@ -124,9 +139,7 @@ def main():
     ].copy()
 
     add_weekly_page(doc, "Page 1: Cambodia News", cambodia, max_items=12)
-
     doc.add_page_break()
-
     add_weekly_page(doc, "Page 2: Global News", global_news, max_items=12)
 
     doc.save(weekly_docx)
