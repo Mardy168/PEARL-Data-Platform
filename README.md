@@ -25,8 +25,8 @@ GitHub > Actions > PEARL Weekly Report > Run workflow
 
 ## Schedule
 
-- Daily collection: 07:00 Cambodia time
-- Weekly report: Friday 16:00 Cambodia time
+- Daily collection: 07:00 AM Cambodia time
+- Weekly report: Friday 11:00 AM Cambodia time
 
 ## Main folders
 
