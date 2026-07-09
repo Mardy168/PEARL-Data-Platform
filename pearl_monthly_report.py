@@ -29,6 +29,13 @@ def clean_duplicates(df):
     return df
 
 
+def remove_timezone(df):
+    for col in df.columns:
+        if pd.api.types.is_datetime64tz_dtype(df[col]):
+            df[col] = df[col].dt.tz_localize(None)
+    return df
+
+
 def add_monthly_page(doc, title, df, max_items=15):
     doc.add_heading(title, level=1)
 
@@ -106,6 +113,10 @@ def main():
     today = datetime.now(CAMBODIA_TZ).date()
     report_month = today.strftime("%Y-%m")
 
+    if "published_date" not in df.columns:
+        print("Missing column: published_date")
+        return
+
     df["published_dt"] = pd.to_datetime(
         df["published_date"],
         errors="coerce",
@@ -124,6 +135,7 @@ def main():
         return
 
     monthly = clean_duplicates(monthly)
+    monthly = remove_timezone(monthly)
 
     monthly_xlsx = f"{OUTPUT_MONTHLY}/PEARL_monthly_news_{report_month}.xlsx"
     monthly_docx = f"{OUTPUT_MONTHLY}/PEARL_monthly_summary_{report_month}.docx"
@@ -156,13 +168,9 @@ def main():
     ].copy()
 
     add_monthly_page(doc, "Page 1: Cambodia Monthly News", cambodia, max_items=15)
-
     doc.add_page_break()
-
     add_monthly_page(doc, "Page 2: Global Monthly News", global_news, max_items=15)
-
     doc.add_page_break()
-
     add_statistics_page(doc, monthly)
 
     doc.save(monthly_docx)
