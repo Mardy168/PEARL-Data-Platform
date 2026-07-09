@@ -20,32 +20,6 @@ MASTER_FILENAME = "PEARL_master_news.csv"
 MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
 
 
-def parse_news_datetime(df):
-    df["published_dt"] = pd.to_datetime(
-        df.get("published_date", ""),
-        errors="coerce",
-        utc=True
-    )
-
-    df["published_dt_kh"] = df["published_dt"].dt.tz_convert(CAMBODIA_TZ)
-    return df
-
-
-def filter_last_24_hours(df):
-    now = datetime.now(CAMBODIA_TZ)
-    start_time = now - timedelta(hours=24)
-
-    df = parse_news_datetime(df)
-
-    df = df[
-        df["published_dt_kh"].notna()
-        & (df["published_dt_kh"] >= start_time)
-        & (df["published_dt_kh"] <= now)
-    ].copy()
-
-    return df
-
-
 def load_master():
     if os.path.exists(MASTER_FILE):
         return pd.read_csv(MASTER_FILE)
@@ -59,13 +33,37 @@ def write_log(message):
     print(message)
 
 
+def add_published_datetime(df):
+    df["published_dt"] = pd.to_datetime(
+        df.get("published_date", ""),
+        errors="coerce",
+        utc=True
+    )
+    df["published_dt_kh"] = df["published_dt"].dt.tz_convert(CAMBODIA_TZ)
+    return df
+
+
+def clean_duplicates(df):
+    if df.empty:
+        return df
+
+    df = add_duplicate_keys(df)
+    df = df.drop_duplicates(subset=["title_id"])
+    df = df.drop_duplicates(subset=["url_id"])
+    df = remove_similar_titles(df, threshold=0.92)
+    return df
+
+
 def main():
     os.makedirs(OUTPUT_DAILY, exist_ok=True)
     os.makedirs(OUTPUT_MASTER, exist_ok=True)
     os.makedirs(OUTPUT_LOGS, exist_ok=True)
 
     today = datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d")
-    run_time = datetime.now(CAMBODIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(CAMBODIA_TZ)
+    start_time = now - timedelta(hours=24)
+
+    run_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
     write_log("")
     write_log(f"===== PEARL Daily News Run Started: {run_time} =====")
@@ -80,19 +78,21 @@ def main():
 
     raw_count = len(df)
 
-    # Keep only articles published in the last 24 hours
-    df = filter_last_24_hours(df)
+    df = add_published_datetime(df)
+
+    df = df[
+        df["published_dt_kh"].notna()
+        & (df["published_dt_kh"] >= start_time)
+        & (df["published_dt_kh"] <= now)
+    ].copy()
+
     recent_count = len(df)
 
     if df.empty:
         write_log("No news published in the last 24 hours.")
         return
 
-    # Remove duplicates inside today’s collection
-    df = add_duplicate_keys(df)
-    df = df.drop_duplicates(subset=["title_id"])
-    df = df.drop_duplicates(subset=["url_id"])
-    df = remove_similar_titles(df, threshold=0.92)
+    df = clean_duplicates(df)
 
     df["Summary"] = df.apply(make_summary, axis=1)
 
@@ -101,7 +101,7 @@ def main():
     master = load_master()
 
     if not master.empty:
-        master = add_duplicate_keys(master)
+        master = clean_duplicates(master)
 
         existing_titles = set(master["title_id"].astype(str))
         existing_urls = set(master["url_id"].astype(str))
@@ -115,12 +115,8 @@ def main():
 
     new_count = len(new_df)
 
-    # Update master only with new records
     combined = pd.concat([master, new_df], ignore_index=True)
-    combined = add_duplicate_keys(combined)
-    combined = combined.drop_duplicates(subset=["title_id"])
-    combined = combined.drop_duplicates(subset=["url_id"])
-    combined = remove_similar_titles(combined, threshold=0.92)
+    combined = clean_duplicates(combined)
 
     combined.to_csv(MASTER_FILE, index=False, encoding="utf-8-sig")
 
@@ -129,7 +125,6 @@ def main():
     daily_docx = f"{OUTPUT_DAILY}/PEARL_daily_summary_{today}.docx"
     daily_log = f"{OUTPUT_LOGS}/PEARL_daily_log_{today}.txt"
 
-    # Daily output = last 24 hours + not already in master
     new_df.to_csv(daily_csv, index=False, encoding="utf-8-sig")
     new_df.to_excel(daily_xlsx, index=False)
 
