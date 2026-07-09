@@ -29,6 +29,13 @@ def clean_duplicates(df):
     return df
 
 
+def remove_timezone(df):
+    for col in df.columns:
+        if pd.api.types.is_datetime64tz_dtype(df[col]):
+            df[col] = df[col].dt.tz_localize(None)
+    return df
+
+
 def add_weekly_page(doc, title, df, max_items=12):
     doc.add_heading(title, level=1)
 
@@ -87,6 +94,10 @@ def main():
     start_date = today - timedelta(days=7)
     report_date = today.strftime("%Y-%m-%d")
 
+    if "published_date" not in df.columns:
+        print("Missing column: published_date")
+        return
+
     df["published_dt"] = pd.to_datetime(
         df["published_date"],
         errors="coerce",
@@ -106,6 +117,7 @@ def main():
         return
 
     weekly = clean_duplicates(weekly)
+    weekly = remove_timezone(weekly)
 
     weekly_xlsx = f"{OUTPUT_WEEKLY}/PEARL_weekly_news_{report_date}.xlsx"
     weekly_docx = f"{OUTPUT_WEEKLY}/PEARL_weekly_summary_{report_date}.docx"
