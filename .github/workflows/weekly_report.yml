@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "0 4 * * 5"  # Friday 11:00 AM Cambodia
+    - cron: "0 0 * * 5"  # Friday 7:00 AM Cambodia
 
 jobs:
   weekly-report:
