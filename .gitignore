@@ -6,11 +6,13 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.DS_Store
+
 data/daily/*
 data/weekly/*
 data/monthly/*
 data/logs/*
-data/master/*.csv
+data/master/*
 data/qa/*
 !data/daily/.gitkeep
 !data/weekly/.gitkeep

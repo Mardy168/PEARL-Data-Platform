@@ -1,21 +1,22 @@
-name: PEARL Monthly Report
+name: PEARL Recover Master (Manual Only)
 
 on:
   workflow_dispatch:
     inputs:
-      report_month:
-        description: "Optional month in YYYY-MM format"
-        required: false
-        type: string
-  schedule:
-    - cron: "0 2 1 * *"  # 09:00 Cambodia, first day of month
+      recovery_input_filename:
+        description: "Backup CSV uploaded to Drive (review carefully)"
+        required: true
+        default: "PEARL_master_news_RECOVERY_INPUT.csv"
+
+permissions:
+  contents: read
 
 concurrency:
-  group: pearl-monthly-report
+  group: pearl-master-recovery
   cancel-in-progress: false
 
 jobs:
-  run:
+  recover:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -28,12 +29,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run Monthly Report
+      - name: Recover Master Safely
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           GOOGLE_MASTER_FILE_ID: ${{ secrets.GOOGLE_MASTER_FILE_ID }}
-          REPORT_MONTH: ${{ inputs.report_month }}
-        run: python pearl_monthly_report.py
+          RECOVERY_INPUT_FILENAME: ${{ inputs.recovery_input_filename }}
+        run: python tools/recover_master_from_drive.py
