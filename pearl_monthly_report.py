@@ -1,186 +1,75 @@
+from __future__ import annotations
+
 import os
-from datetime import datetime, timedelta, timezone
-
+from pathlib import Path
+from datetime import datetime
 import pandas as pd
-from docx import Document
-from docx.shared import Inches, Pt
 
-from src.drive.drive import upload_file, download_file_by_name
-from src.utils.duplicate import add_duplicate_keys, remove_similar_titles
+from src.drive.drive import download_file_by_name, upload_file
+from src.reports.common import configure_document, add_news_section
+from src.utils.dates import CAMBODIA_TZ, add_published_columns, now_cambodia, previous_month_window, remove_timezone_columns
+from src.utils.duplicate import deduplicate_articles
+from src.utils.excel import write_excel
 
-
-CAMBODIA_TZ = timezone(timedelta(hours=7))
-
-OUTPUT_MONTHLY = "data/monthly"
-OUTPUT_MASTER = "data/master"
-
-MASTER_FILENAME = "PEARL_master_news.csv"
-MASTER_FILE = f"{OUTPUT_MASTER}/{MASTER_FILENAME}"
+OUTPUT_MONTHLY = Path("data/monthly")
+OUTPUT_LOGS = Path("data/logs")
+MASTER_FILE = Path("data/master/PEARL_master_news.csv")
+MASTER_FILENAME = MASTER_FILE.name
 
 
-def clean_duplicates(df):
-    if df.empty:
-        return df
-
-    df = add_duplicate_keys(df)
-    df = df.drop_duplicates(subset=["title_id"])
-    df = df.drop_duplicates(subset=["url_id"])
-    df = remove_similar_titles(df, threshold=0.92)
-    return df
-
-
-def remove_timezone(df):
-    for col in df.columns:
-        if pd.api.types.is_datetime64tz_dtype(df[col]):
-            df[col] = df[col].dt.tz_localize(None)
-    return df
+def resolve_window(now):
+    explicit = os.getenv("REPORT_MONTH", "").strip()
+    if explicit:
+        start = datetime.strptime(explicit + "-01", "%Y-%m-%d").replace(tzinfo=CAMBODIA_TZ)
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+        return start, end, explicit
+    return previous_month_window(now)
 
 
-def add_monthly_page(doc, title, df, max_items=15):
-    doc.add_heading(title, level=1)
+def main() -> None:
+    OUTPUT_MONTHLY.mkdir(parents=True, exist_ok=True)
+    OUTPUT_LOGS.mkdir(parents=True, exist_ok=True)
+    MASTER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    download_file_by_name(MASTER_FILENAME, str(MASTER_FILE))
+    if not MASTER_FILE.exists():
+        raise FileNotFoundError("Master file is missing. Run daily collector first.")
 
-    if df.empty:
-        doc.add_paragraph("No major news identified.")
-        return
+    now = now_cambodia()
+    start, end, report_month = resolve_window(now)
+    df = add_published_columns(pd.read_csv(MASTER_FILE))
+    monthly = df[df["published_dt_kh"].notna() &
+                 (df["published_dt_kh"] >= start) &
+                 (df["published_dt_kh"] < end)].copy()
+    monthly = deduplicate_articles(monthly)
+    monthly = monthly[monthly.get("status", "ARTICLE").astype(str).eq("ARTICLE")] if "status" in monthly.columns else monthly
+    monthly = monthly.sort_values("published_dt_kh", ascending=False)
 
-    doc.add_paragraph(f"Total unique articles this month: {len(df)}")
+    xlsx = OUTPUT_MONTHLY / f"PEARL_monthly_news_{report_month}.xlsx"
+    docx = OUTPUT_MONTHLY / f"PEARL_monthly_summary_{report_month}.docx"
+    log = OUTPUT_LOGS / f"PEARL_monthly_log_{report_month}.txt"
+    write_excel(remove_timezone_columns(monthly), str(xlsx))
 
-    if "crop" in df.columns:
-        crop_summary = ", ".join(
-            [f"{crop}: {count}" for crop, count in df["crop"].value_counts().items()]
-        )
-        doc.add_paragraph(f"Crop summary: {crop_summary}")
+    doc = configure_document("PEARL Monthly Agriculture News Summary",
+                             f"Completed month: {report_month}")
+    cambodia = monthly[monthly["country"].astype(str).str.lower().eq("cambodia")]
+    global_news = monthly[~monthly["country"].astype(str).str.lower().eq("cambodia")]
+    add_news_section(doc, "Page 1: Cambodia Monthly News", cambodia, 15)
+    doc.add_page_break(); add_news_section(doc, "Page 2: Global Monthly News", global_news, 15)
+    doc.add_page_break(); doc.add_heading("Page 3: Statistics", 1)
+    doc.add_paragraph(f"Total unique articles: {len(monthly)}")
+    for label, col in (("Country", "country"), ("Crop", "crop"), ("Topic", "topic")):
+        doc.add_heading(f"By {label}", 2)
+        for value, count in monthly[col].fillna("Unknown").value_counts().items():
+            doc.add_paragraph(f"- {value}: {count}")
+    doc.save(docx)
 
-    if "topic" in df.columns:
-        topic_summary = ", ".join(
-            [f"{topic}: {count}" for topic, count in df["topic"].value_counts().items()]
-        )
-        doc.add_paragraph(f"Topic summary: {topic_summary}")
-
-    doc.add_heading("Key News", level=2)
-
-    for _, row in df.head(max_items).iterrows():
-        news_title = str(row.get("title", "")).strip()
-        summary = str(row.get("Summary", "")).strip()
-        crop = str(row.get("crop", "")).strip()
-        topic = str(row.get("topic", "")).strip()
-
-        if news_title:
-            doc.add_paragraph(f"• {news_title}")
-
-        if summary:
-            doc.add_paragraph(f"  {summary}")
-
-        doc.add_paragraph(f"  Crop: {crop} | Topic: {topic}")
-
-
-def add_statistics_page(doc, df):
-    doc.add_heading("Page 3: Overall Statistics", level=1)
-    doc.add_paragraph(f"Total unique articles this month: {len(df)}")
-
-    if "country" in df.columns:
-        doc.add_heading("By Country", level=2)
-        for country, count in df["country"].value_counts().items():
-            doc.add_paragraph(f"- {country}: {count}")
-
-    if "crop" in df.columns:
-        doc.add_heading("By Crop", level=2)
-        for crop, count in df["crop"].value_counts().items():
-            doc.add_paragraph(f"- {crop}: {count}")
-
-    if "topic" in df.columns:
-        doc.add_heading("By Topic", level=2)
-        for topic, count in df["topic"].value_counts().items():
-            doc.add_paragraph(f"- {topic}: {count}")
-
-
-def main():
-    os.makedirs(OUTPUT_MONTHLY, exist_ok=True)
-    os.makedirs(OUTPUT_MASTER, exist_ok=True)
-
-    download_file_by_name(MASTER_FILENAME, MASTER_FILE)
-
-    if not os.path.exists(MASTER_FILE):
-        print("No master file found. Run daily collector first.")
-        return
-
-    df = pd.read_csv(MASTER_FILE)
-
-    if df.empty:
-        print("Master file is empty.")
-        return
-
-    today = datetime.now(CAMBODIA_TZ).date()
-    report_month = today.strftime("%Y-%m")
-
-    if "published_date" not in df.columns:
-        print("Missing column: published_date")
-        return
-
-    df["published_dt"] = pd.to_datetime(
-        df["published_date"],
-        errors="coerce",
-        utc=True
-    )
-
-    df["published_dt_kh"] = df["published_dt"].dt.tz_convert(CAMBODIA_TZ)
-
-    monthly = df[
-        df["published_dt_kh"].notna()
-        & (df["published_dt_kh"].dt.strftime("%Y-%m") == report_month)
-    ].copy()
-
-    if monthly.empty:
-        print("No monthly records found.")
-        return
-
-    monthly = clean_duplicates(monthly)
-    monthly = remove_timezone(monthly)
-
-    monthly_xlsx = f"{OUTPUT_MONTHLY}/PEARL_monthly_news_{report_month}.xlsx"
-    monthly_docx = f"{OUTPUT_MONTHLY}/PEARL_monthly_summary_{report_month}.docx"
-
-    monthly.to_excel(monthly_xlsx, index=False)
-
-    doc = Document()
-
-    section = doc.sections[0]
-    section.top_margin = Inches(0.45)
-    section.bottom_margin = Inches(0.45)
-    section.left_margin = Inches(0.55)
-    section.right_margin = Inches(0.55)
-
-    style = doc.styles["Normal"]
-    style.font.size = Pt(8)
-
-    doc.add_heading("PEARL Monthly Agriculture News Summary", 0)
-    doc.add_paragraph(f"Report month: {report_month}")
-    doc.add_paragraph(
-        "Monthly summary. News links are excluded from this Word report and kept in Excel."
-    )
-
-    cambodia = monthly[
-        monthly["country"].astype(str).str.lower() == "cambodia"
-    ].copy()
-
-    global_news = monthly[
-        monthly["country"].astype(str).str.lower() != "cambodia"
-    ].copy()
-
-    add_monthly_page(doc, "Page 1: Cambodia Monthly News", cambodia, max_items=15)
-    doc.add_page_break()
-    add_monthly_page(doc, "Page 2: Global Monthly News", global_news, max_items=15)
-    doc.add_page_break()
-    add_statistics_page(doc, monthly)
-
-    doc.save(monthly_docx)
-
-    upload_file(monthly_xlsx)
-    upload_file(monthly_docx)
-
+    with open(log, "w", encoding="utf-8") as f:
+        f.write(f"Monthly period: {start} to {end}\nUnique articles: {len(monthly)}\n")
+    for path in (xlsx, docx, log): upload_file(str(path))
     print("Monthly report completed successfully.")
-    print(f"Monthly Excel: {monthly_xlsx}")
-    print(f"Monthly Word: {monthly_docx}")
 
 
 if __name__ == "__main__":

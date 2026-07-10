@@ -1,49 +1,23 @@
-# PEARL Data Platform - Phase 2
+# PEARL News Collection Platform v2.1
 
-This phase adds a stronger PEARL news and market-intelligence foundation.
+Production baseline for automated rice, mango, cashew and vegetable news monitoring.
 
-## What it does
+## Reporting rules
+- Daily: exact previous 24 hours, only records not already in the master.
+- Weekly: exact rolling seven days from the master.
+- Monthly: previous completed calendar month by default.
+- Same story from different publishers is retained.
+- Same canonical URL or same publisher + normalized title is removed.
 
-- Collects daily crop intelligence for Mango, Cashew, Rice and Vegetables.
-- Searches Cambodia and global trends using Google News RSS and GDELT.
-- Adds curated RSS sources where available.
-- Classifies each record by crop, topic and Cambodia/global source group.
-- Creates CSV and Excel outputs.
-- Uploads outputs to Google Drive.
-- Generates a weekly Word report by downloading recent daily CSVs from Google Drive.
+## Outputs
+Daily CSV, Excel, one-page Word summary, log, QA workbook and updated master CSV. Weekly and monthly produce Excel, Word and logs.
 
-## Required GitHub Secrets
+## Excel date
+`Published Date` is Cambodia time formatted as `YYYY-MM-DD HH:MM:SS`.
 
-- `GOOGLE_DRIVE_FOLDER_ID`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
+## Required GitHub secrets
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DRIVE_FOLDER_ID`.
 
-## Manual run
-
-GitHub > Actions > PEARL Daily News Collection > Run workflow
-
-GitHub > Actions > PEARL Weekly Report > Run workflow
-
-## Schedule
-
-- Daily collection: 07:00 AM Cambodia time
-- Weekly report: Friday 11:00 AM Cambodia time
-
-## Main folders
-
-```text
-config/keywords.json
-config/sources.json
-src/collectors/news.py
-src/drive/upload.py
-src/reports/weekly.py
-src/utils/classify.py
-src/main.py
-```
-
-## Outputs in Google Drive
-
-```text
-PEARL_daily_news_YYYY-MM-DD.csv
-PEARL_daily_news_YYYY-MM-DD.xlsx
-PEARL_weekly_commonality_report_YYYY-MM-DD.docx
-```
+## One-time tools
+- `python tools/clean_master.py`
+- `python tools/regenerate_corrected_reports.py`
