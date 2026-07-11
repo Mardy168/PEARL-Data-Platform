@@ -13,16 +13,38 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 def get_drive_service():
-    creds = Credentials(
-        token=None,
-        refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=os.environ["GOOGLE_CLIENT_ID"],
-        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    """
+    Authenticate using a Google Service Account stored in the GitHub Secret
+    GOOGLE_SERVICE_ACCOUNT_JSON.
+    """
+
+    service_account_json = os.environ.get(
+        "GOOGLE_SERVICE_ACCOUNT_JSON", ""
+    ).strip()
+
+    if not service_account_json:
+        raise RuntimeError(
+            "Missing GitHub Secret: GOOGLE_SERVICE_ACCOUNT_JSON"
+        )
+
+    try:
+        service_account_info = json.loads(service_account_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON."
+        ) from exc
+
+    creds = Credentials.from_service_account_info(
+        service_account_info,
         scopes=SCOPES,
     )
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
 
+    return build(
+        "drive",
+        "v3",
+        credentials=creds,
+        cache_discovery=False,
+    )
 
 def find_files_by_name(filename: str) -> list[dict[str, Any]]:
     folder_id = os.environ["GOOGLE_DRIVE_FOLDER_ID"]
