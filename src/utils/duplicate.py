@@ -3,13 +3,12 @@ from __future__ import annotations
 import hashlib
 import html
 import re
-from typing import Final
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import pandas as pd
 
 
-TRACKING_KEYS: Final[set[str]] = {
+TRACKING_KEYS = {
     "fbclid",
     "gclid",
     "dclid",
@@ -22,12 +21,9 @@ TRACKING_KEYS: Final[set[str]] = {
     "source",
 }
 
-TRACKING_PREFIXES: Final[tuple[str, ...]] = (
-    "utm_",
-    "ga_",
-)
+TRACKING_PREFIXES = ("utm_", "ga_")
 
-DATE_COLUMNS: Final[tuple[str, ...]] = (
+DATE_COLUMNS = (
     "published_dt_kh",
     "published_dt_utc",
     "published_dt",
@@ -35,11 +31,12 @@ DATE_COLUMNS: Final[tuple[str, ...]] = (
     "Published Date",
 )
 
-TEMPORARY_SORT_COLUMN: Final[str] = "_dedup_sort_datetime"
+SORT_DATE_COLUMN = "_dedup_sort_date"
+ORIGINAL_ORDER_COLUMN = "_dedup_original_order"
 
 
-def _safe_string(value: object) -> str:
-    """Convert a value to text without turning NaN/NaT into meaningful text."""
+def safe_text(value: object) -> str:
+    """Convert a scalar value to clean text without preserving NaN/NaT."""
     if value is None:
         return ""
 
@@ -52,41 +49,31 @@ def _safe_string(value: object) -> str:
     return str(value).strip()
 
 
-def clean_text(text: object) -> str:
-    """Remove HTML markup, decode entities and normalize whitespace."""
-    value = html.unescape(_safe_string(text))
-    value = re.sub(r"<[^>]+>", " ", value)
-    value = re.sub(r"[\u200b-\u200d\ufeff]", "", value)
-    return re.sub(r"\s+", " ", value).strip()
+def clean_text(value: object) -> str:
+    """Remove HTML markup and normalize whitespace."""
+    text = html.unescape(safe_text(value))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[\u200b-\u200d\ufeff]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def normalize_title(title: object) -> str:
-    """
-    Normalize English and Khmer titles for deterministic duplicate matching.
-
-    Khmer Unicode characters are retained.
-    """
-    value = clean_text(title).lower()
-    value = re.sub(r"[^a-z0-9\u1780-\u17ff\s]", " ", value)
-    return re.sub(r"\s+", " ", value).strip()
+def normalize_title(value: object) -> str:
+    """Normalize English and Khmer text for duplicate comparison."""
+    text = clean_text(value).lower()
+    text = re.sub(r"[^a-z0-9\u1780-\u17ff\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def normalize_url(url: object) -> str:
-    """
-    Normalize an article URL.
-
-    Tracking parameters and fragments are removed while meaningful query
-    parameters are retained.
-    """
-    raw = _safe_string(url)
+def normalize_url(value: object) -> str:
+    """Remove fragments and common tracking parameters from a URL."""
+    raw = safe_text(value)
     if not raw:
         return ""
 
     try:
         parsed = urlparse(raw)
 
-        # A URL without a scheme may otherwise be interpreted as a path.
-        if not parsed.netloc and parsed.path:
+        if not parsed.scheme and not parsed.netloc:
             parsed = urlparse(f"https://{raw}")
 
         scheme = (parsed.scheme or "https").lower()
@@ -98,42 +85,28 @@ def normalize_url(url: object) -> str:
         if not host:
             return raw.split("#", 1)[0].strip()
 
-        port = parsed.port
-        if port is not None:
-            default_port = (
-                scheme == "http" and port == 80
-            ) or (
-                scheme == "https" and port == 443
-            )
-            if not default_port:
-                host = f"{parsed.hostname}:{port}"
-            else:
-                host = parsed.hostname or host
+        parameters: list[tuple[str, str]] = []
 
-        cleaned_parameters: list[tuple[str, str]] = []
-
-        for key, value in parse_qsl(
+        for key, item_value in parse_qsl(
             parsed.query,
             keep_blank_values=True,
         ):
-            lower_key = key.lower()
+            normalized_key = key.lower()
 
-            if lower_key in TRACKING_KEYS:
+            if normalized_key in TRACKING_KEYS:
                 continue
 
-            if any(
-                lower_key.startswith(prefix)
-                for prefix in TRACKING_PREFIXES
-            ):
+            if normalized_key.startswith(TRACKING_PREFIXES):
                 continue
 
-            cleaned_parameters.append((key, value))
+            parameters.append((key, item_value))
 
         path = re.sub(r"/{2,}", "/", parsed.path or "/")
+
         if path != "/":
             path = path.rstrip("/")
 
-        query = urlencode(sorted(cleaned_parameters))
+        query = urlencode(sorted(parameters))
 
         return urlunparse(
             (
@@ -150,42 +123,84 @@ def normalize_url(url: object) -> str:
         return raw.split("#", 1)[0].strip()
 
 
-def get_domain(url: object) -> str:
-    """Extract a normalized publisher domain from a URL."""
-    normalized = normalize_url(url)
+def extract_domain(value: object) -> str:
+    """Return the normalized hostname from a URL."""
+    normalized = normalize_url(value)
 
     if not normalized:
         return ""
 
     try:
-        host = urlparse(normalized).netloc.lower()
-
-        if host.startswith("www."):
-            host = host[4:]
-
-        return host
-
+        return urlparse(normalized).netloc.lower().removeprefix("www.")
     except (TypeError, ValueError):
         return ""
 
 
 def make_hash(value: object) -> str:
-    """Create a deterministic SHA-256 identifier."""
+    """Return a stable SHA-256 hash."""
     return hashlib.sha256(
-        _safe_string(value).encode("utf-8")
+        safe_text(value).encode("utf-8")
     ).hexdigest()
 
 
-def normalize_duplicate_dates(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create one UTC datetime column used only for deterministic sorting.
+def add_duplicate_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """Add normalized duplicate-matching fields."""
+    out = df.copy()
 
-    This prevents Pandas from comparing strings directly with Timestamp
-    objects. Invalid or missing values become NaT.
+    for column in ("title", "url", "publisher_domain"):
+        if column not in out.columns:
+            out[column] = ""
+
+        out[column] = out[column].apply(safe_text)
+
+    out["clean_title"] = out["title"].apply(normalize_title)
+    out["canonical_url"] = out["url"].apply(normalize_url)
+
+    missing_domain = out["publisher_domain"].eq("")
+
+    out.loc[missing_domain, "publisher_domain"] = (
+        out.loc[missing_domain, "canonical_url"]
+        .apply(extract_domain)
+    )
+
+    out["publisher_domain"] = (
+        out["publisher_domain"]
+        .astype(str)
+        .str.lower()
+        .str.strip()
+    )
+
+    out["url_id"] = out["canonical_url"].apply(make_hash)
+
+    out["same_site_title_id"] = (
+        out["publisher_domain"]
+        + "|"
+        + out["clean_title"]
+    ).apply(make_hash)
+
+    out["article_id"] = (
+        out["url_id"]
+        + "|"
+        + out["same_site_title_id"]
+    ).apply(make_hash)
+
+    return out
+
+
+def add_normalized_sort_date(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build one UTC datetime series for sorting.
+
+    All strings, naive timestamps and timezone-aware timestamps are converted
+    to datetime64[ns, UTC]. Invalid values become NaT.
     """
     out = df.copy()
 
-    candidate_series: list[pd.Series] = []
+    combined = pd.Series(
+        pd.NaT,
+        index=out.index,
+        dtype="datetime64[ns, UTC]",
+    )
 
     for column in DATE_COLUMNS:
         if column not in out.columns:
@@ -198,90 +213,21 @@ def normalize_duplicate_dates(df: pd.DataFrame) -> pd.DataFrame:
             format="mixed",
         )
 
-        candidate_series.append(parsed)
+        combined = combined.fillna(parsed)
 
-    if not candidate_series:
-        out[TEMPORARY_SORT_COLUMN] = pd.Series(
-            pd.NaT,
-            index=out.index,
-            dtype="datetime64[ns, UTC]",
-        )
-        return out
-
-    combined = candidate_series[0]
-
-    for candidate in candidate_series[1:]:
-        combined = combined.fillna(candidate)
-
-    out[TEMPORARY_SORT_COLUMN] = combined
-    return out
-
-
-def add_duplicate_keys(df: pd.DataFrame) -> pd.DataFrame:
-    """Add normalized URL, title and stable duplicate identifiers."""
-    out = df.copy()
-
-    defaults = {
-        "title": "",
-        "url": "",
-        "publisher_domain": "",
-    }
-
-    for column, default in defaults.items():
-        if column not in out.columns:
-            out[column] = default
-
-    out["title"] = out["title"].apply(_safe_string)
-    out["url"] = out["url"].apply(_safe_string)
-    out["publisher_domain"] = (
-        out["publisher_domain"]
-        .apply(_safe_string)
-        .str.lower()
-        .str.strip()
-    )
-
-    out["clean_title"] = out["title"].apply(normalize_title)
-    out["canonical_url"] = out["url"].apply(normalize_url)
-
-    missing_domain = out["publisher_domain"].eq("")
-
-    out.loc[missing_domain, "publisher_domain"] = (
-        out.loc[missing_domain, "canonical_url"]
-        .apply(get_domain)
-    )
-
-    out["url_id"] = out["canonical_url"].apply(make_hash)
-
-    same_site_identity = (
-        out["publisher_domain"]
-        + "|"
-        + out["clean_title"]
-    )
-
-    out["same_site_title_id"] = same_site_identity.apply(make_hash)
-
-    # Canonical URL is preferred, while the publisher/title identity provides
-    # a deterministic fallback for feeds with rewritten or missing URLs.
-    article_identity = (
-        out["url_id"]
-        + "|"
-        + out["same_site_title_id"]
-    )
-
-    out["article_id"] = article_identity.apply(make_hash)
-
+    out[SORT_DATE_COLUMN] = combined
     return out
 
 
 def deduplicate_articles(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Deduplicate article records deterministically.
+    Deduplicate articles without comparing strings to Timestamp objects.
 
-    Rules:
-    1. Newer publication records are preferred.
-    2. Exact canonical URLs are retained once.
-    3. The same normalized title from the same publisher is retained once.
-    4. Similar events from different publishers remain separate.
+    Preference order:
+    1. Newest valid publication time.
+    2. Original dataframe order.
+    3. One record per canonical URL.
+    4. One record per normalized publisher-and-title combination.
     """
     if df is None:
         return add_duplicate_keys(pd.DataFrame())
@@ -290,80 +236,55 @@ def deduplicate_articles(df: pd.DataFrame) -> pd.DataFrame:
         return add_duplicate_keys(df).reset_index(drop=True)
 
     out = add_duplicate_keys(df)
-    out = normalize_duplicate_dates(out)
-
-    # Stable sorting preserves original order when publication times match.
-    out["_dedup_original_order"] = range(len(out))
+    out = add_normalized_sort_date(out)
+    out[ORIGINAL_ORDER_COLUMN] = range(len(out))
 
     out = out.sort_values(
-        by=[
-            TEMPORARY_SORT_COLUMN,
-            "_dedup_original_order",
-        ],
-        ascending=[
-            False,
-            True,
-        ],
+        by=[SORT_DATE_COLUMN, ORIGINAL_ORDER_COLUMN],
+        ascending=[False, True],
         na_position="last",
         kind="mergesort",
     )
 
-    has_url = out["canonical_url"].str.strip().ne("")
+    has_url = out["canonical_url"].ne("")
 
-    with_url = (
-        out.loc[has_url]
-        .drop_duplicates(
-            subset=["url_id"],
-            keep="first",
-        )
+    records_with_url = out.loc[has_url].drop_duplicates(
+        subset=["url_id"],
+        keep="first",
     )
 
-    without_url = out.loc[~has_url]
+    records_without_url = out.loc[~has_url]
 
     out = pd.concat(
-        [with_url, without_url],
+        [records_with_url, records_without_url],
         ignore_index=True,
         sort=False,
     )
 
-    # Do not use an empty title as a duplicate key. Empty titles would
-    # otherwise collapse unrelated articles from the same publisher.
-    has_title = out["clean_title"].str.strip().ne("")
+    has_title = out["clean_title"].ne("")
 
-    with_title = (
-        out.loc[has_title]
-        .drop_duplicates(
-            subset=["same_site_title_id"],
-            keep="first",
-        )
+    records_with_title = out.loc[has_title].drop_duplicates(
+        subset=["same_site_title_id"],
+        keep="first",
     )
 
-    without_title = out.loc[~has_title]
+    records_without_title = out.loc[~has_title]
 
     out = pd.concat(
-        [with_title, without_title],
+        [records_with_title, records_without_title],
         ignore_index=True,
         sort=False,
     )
 
     out = out.sort_values(
-        by=[
-            TEMPORARY_SORT_COLUMN,
-            "_dedup_original_order",
-        ],
-        ascending=[
-            False,
-            True,
-        ],
+        by=[SORT_DATE_COLUMN, ORIGINAL_ORDER_COLUMN],
+        ascending=[False, True],
         na_position="last",
         kind="mergesort",
     )
 
     out = out.drop(
-        columns=[
-            TEMPORARY_SORT_COLUMN,
-            "_dedup_original_order",
-        ],
+        columns=[SORT_DATE_COLUMN, ORIGINAL_ORDER_COLUMN],
         errors="ignore",
     )
 
@@ -374,46 +295,46 @@ def exclude_existing(
     df: pd.DataFrame,
     master: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Return only records that do not already occur in the normalized master.
-    """
+    """Return records not already represented in the master dataset."""
     if df is None or df.empty:
-        return add_duplicate_keys(
-            pd.DataFrame() if df is None else df
-        ).reset_index(drop=True)
+        source = pd.DataFrame() if df is None else df
+        return add_duplicate_keys(source).reset_index(drop=True)
 
-    new = deduplicate_articles(df)
+    new_records = deduplicate_articles(df)
 
     if master is None or master.empty:
-        return new.reset_index(drop=True)
+        return new_records
 
-    old = deduplicate_articles(master)
+    master_records = deduplicate_articles(master)
 
-    old_urls = set(
-        old.loc[
-            old["canonical_url"].str.strip().ne(""),
+    existing_urls = set(
+        master_records.loc[
+            master_records["canonical_url"].ne(""),
             "url_id",
         ].astype(str)
     )
 
-    old_titles = set(
-        old.loc[
-            old["clean_title"].str.strip().ne(""),
+    existing_titles = set(
+        master_records.loc[
+            master_records["clean_title"].ne(""),
             "same_site_title_id",
         ].astype(str)
     )
 
-    has_url = new["canonical_url"].str.strip().ne("")
-    has_title = new["clean_title"].str.strip().ne("")
+    has_url = new_records["canonical_url"].ne("")
+    has_title = new_records["clean_title"].ne("")
 
-    url_is_new = ~new["url_id"].astype(str).isin(old_urls)
-    title_is_new = ~new["same_site_title_id"].astype(str).isin(
-        old_titles
+    url_is_new = ~new_records["url_id"].astype(str).isin(
+        existing_urls
     )
 
-    keep = pd.Series(True, index=new.index)
+    title_is_new = ~new_records[
+        "same_site_title_id"
+    ].astype(str).isin(existing_titles)
+
+    keep = pd.Series(True, index=new_records.index)
 
     keep.loc[has_url] &= url_is_new.loc[has_url]
     keep.loc[has_title] &= title_is_new.loc[has_title]
 
-    return new.loc[keep].reset_index(drop=True)
+    return new_records.loc[keep].reset_index(drop=True)
