@@ -37,8 +37,9 @@ jobs:
         run: python -m compileall -q .
       - name: Run Monthly Report
         env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
-          GOOGLE_MASTER_FILE_ID: ${{ secrets.GOOGLE_MASTER_FILE_ID }}
-          REPORT_MONTH: ${{ inputs.report_month }}
+            GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+            GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+            GOOGLE_MASTER_FILE_ID: ${{ secrets.GOOGLE_MASTER_FILE_ID }}
         run: python pearl_monthly_report.py
