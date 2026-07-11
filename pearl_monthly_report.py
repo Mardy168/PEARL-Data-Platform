@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from src.drive.drive import upload_file
+from src.drive.drive import resolve_subfolder, upload_file
 from src.master.manager import MASTER_FILENAME, load_master_safely
 from src.reports.common import add_news_section, configure_document
 from src.utils.dates import CAMBODIA_TZ, add_published_columns, now_cambodia, previous_month_window, remove_timezone_columns
@@ -19,7 +19,10 @@ MASTER_FILE = Path("data/master") / MASTER_FILENAME
 def resolve_window(now):
     explicit = os.getenv("REPORT_MONTH", "").strip()
     if explicit:
-        start = datetime.strptime(explicit + "-01", "%Y-%m-%d").replace(tzinfo=CAMBODIA_TZ)
+        try:
+            start = datetime.strptime(explicit + "-01", "%Y-%m-%d").replace(tzinfo=CAMBODIA_TZ)
+        except ValueError as exc:
+            raise ValueError("REPORT_MONTH must use YYYY-MM format.") from exc
         end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
         return start, end, explicit
     return previous_month_window(now)
@@ -40,8 +43,7 @@ def main() -> None:
         & (df["published_dt_kh"] < end)
     ].copy()
     monthly = deduplicate_articles(monthly)
-    if "status" in monthly.columns:
-        monthly = monthly[monthly["status"].astype(str).eq("ARTICLE")]
+    monthly = monthly[monthly["status"].astype(str).eq("ARTICLE")]
     monthly = monthly.sort_values("published_dt_kh", ascending=False)
 
     xlsx = OUTPUT_MONTHLY / f"PEARL_monthly_news_{report_month}.xlsx"
@@ -67,9 +69,14 @@ def main() -> None:
     with open(log, "w", encoding="utf-8") as fh:
         fh.write(f"Master Drive File ID: {state.file_id}\n")
         fh.write(f"Master records loaded: {state.record_count}\n")
-        fh.write(f"Monthly period: {start} to {end}\nUnique articles: {len(monthly)}\n")
-    for path in (xlsx, docx, log):
-        upload_file(str(path))
+        fh.write(f"Monthly period: {start} to {end}\n")
+        fh.write(f"Unique articles: {len(monthly)}\n")
+
+    monthly_folder = resolve_subfolder("Monthly")
+    logs_folder = resolve_subfolder("Logs")
+    upload_file(str(xlsx), folder_id=monthly_folder)
+    upload_file(str(docx), folder_id=monthly_folder)
+    upload_file(str(log), folder_id=logs_folder)
     print("Monthly report completed successfully.")
 
 

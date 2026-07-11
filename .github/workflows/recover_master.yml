@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       recovery_input_filename:
-        description: "Backup CSV uploaded to Drive (review carefully)"
+        description: "Backup CSV uploaded to the Master folder"
         required: true
         default: "PEARL_master_news_RECOVERY_INPUT.csv"
 
@@ -18,22 +18,24 @@ concurrency:
 jobs:
   recover:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Dependencies
+          cache: pip
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Validate Python syntax
+        run: python -m compileall -q .
       - name: Recover Master Safely
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           GOOGLE_MASTER_FILE_ID: ${{ secrets.GOOGLE_MASTER_FILE_ID }}
           RECOVERY_INPUT_FILENAME: ${{ inputs.recovery_input_filename }}

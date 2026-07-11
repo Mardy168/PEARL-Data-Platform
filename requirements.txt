@@ -1,8 +1,7 @@
-pandas
-requests
-feedparser
-openpyxl
-python-docx
-google-api-python-client
-google-auth
-google-auth-oauthlib
+pandas>=2.2,<3.0
+requests>=2.32,<3.0
+feedparser>=6.0.11,<7.0
+openpyxl>=3.1.5,<4.0
+python-docx>=1.1.2,<2.0
+google-api-python-client>=2.150,<3.0
+google-auth>=2.35,<3.0

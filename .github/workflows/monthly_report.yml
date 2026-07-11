@@ -4,11 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       report_month:
-        description: "Optional month in YYYY-MM format"
+        description: "Optional completed month in YYYY-MM format"
         required: false
         type: string
   schedule:
-    - cron: "0 2 1 * *"  # 09:00 Cambodia, first day of month
+    - cron: "0 2 1 * *" # 09:00 Cambodia on first day
+
+permissions:
+  contents: read
 
 concurrency:
   group: pearl-monthly-report
@@ -17,22 +20,24 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Dependencies
+          cache: pip
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Validate Python syntax
+        run: python -m compileall -q .
       - name: Run Monthly Report
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           GOOGLE_MASTER_FILE_ID: ${{ secrets.GOOGLE_MASTER_FILE_ID }}
           REPORT_MONTH: ${{ inputs.report_month }}

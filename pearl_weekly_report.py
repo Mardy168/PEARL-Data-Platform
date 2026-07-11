@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.drive.drive import upload_file
+from src.drive.drive import resolve_subfolder, upload_file
 from src.master.manager import MASTER_FILENAME, load_master_safely
 from src.reports.common import add_news_section, configure_document
 from src.utils.dates import add_published_columns, now_cambodia, remove_timezone_columns, rolling_window
@@ -30,8 +30,7 @@ def main() -> None:
         & (df["published_dt_kh"] <= end)
     ].copy()
     weekly = deduplicate_articles(weekly)
-    if "status" in weekly.columns:
-        weekly = weekly[weekly["status"].astype(str).eq("ARTICLE")]
+    weekly = weekly[weekly["status"].astype(str).eq("ARTICLE")]
     weekly = weekly.sort_values("published_dt_kh", ascending=False)
 
     xlsx = OUTPUT_WEEKLY / f"PEARL_weekly_news_{report_date}.xlsx"
@@ -56,8 +55,12 @@ def main() -> None:
         fh.write(f"Weekly window: {start} to {end}\n")
         fh.write(f"Unique articles: {len(weekly)}\n")
         fh.write(f"Cambodia: {len(cambodia)}\nGlobal: {len(global_news)}\n")
-    for path in (xlsx, docx, log):
-        upload_file(str(path))
+
+    weekly_folder = resolve_subfolder("Weekly")
+    logs_folder = resolve_subfolder("Logs")
+    upload_file(str(xlsx), folder_id=weekly_folder)
+    upload_file(str(docx), folder_id=weekly_folder)
+    upload_file(str(log), folder_id=logs_folder)
     print("Weekly report completed successfully.")
 
 

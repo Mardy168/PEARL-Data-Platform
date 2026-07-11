@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.drive.drive import download_file_by_name, upload_file
+from src.drive.drive import download_file_by_name, resolve_subfolder, upload_file
 from src.master.manager import (
     MASTER_FILENAME,
     combine_and_validate_master,
@@ -26,8 +26,9 @@ QA_PATH = Path("data/qa/PEARL_master_recovery_QA.xlsx")
 def main() -> None:
     MASTER_PATH.parent.mkdir(parents=True, exist_ok=True)
     QA_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if not download_file_by_name(RECOVERY_INPUT, str(INPUT_PATH), require_unique=True):
-        raise FileNotFoundError(f"Recovery input {RECOVERY_INPUT!r} was not found in the configured Drive folder.")
+    master_folder = resolve_subfolder("Master")
+    if not download_file_by_name(RECOVERY_INPUT, str(INPUT_PATH), require_unique=True, folder_id=master_folder):
+        raise FileNotFoundError(f"Recovery input {RECOVERY_INPUT!r} was not found in Drive/Master.")
 
     state = load_master_safely(MASTER_PATH, create_backup=True)
     historical = normalize_master_schema(pd.read_csv(INPUT_PATH))
@@ -44,8 +45,8 @@ def main() -> None:
         "Safety Requirement": "Recovered total must be >= historical input total",
     }
     write_qa_workbook(stats, pd.DataFrame(), str(QA_PATH))
-    upload_file(str(RECOVERED_PATH), RECOVERED_PATH.name, replace=True)
-    upload_file(str(QA_PATH), QA_PATH.name, replace=True)
+    upload_file(str(RECOVERED_PATH), folder_id=master_folder)
+    upload_file(str(QA_PATH), folder_id=resolve_subfolder("QA"))
 
     if len(recovered) < len(historical):
         raise RuntimeError("Recovery safety check failed. Production master was not updated.")

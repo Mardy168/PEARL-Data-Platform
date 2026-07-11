@@ -20,3 +20,5 @@ data/qa/*
 !data/logs/.gitkeep
 !data/master/.gitkeep
 !data/qa/.gitkeep
+data/raw_archive/*
+!data/raw_archive/.gitkeep
