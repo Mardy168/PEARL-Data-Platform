@@ -8,17 +8,24 @@ venv/
 .pytest_cache/
 .DS_Store
 
+# Generated outputs are stored as GitHub Actions artifacts.
 data/daily/*
 data/weekly/*
 data/monthly/*
 data/logs/*
-data/master/*
 data/qa/*
+data/raw_archive/*
+data/master_backups/*
+
+# The normalized master is deliberately versioned so all three reports use
+# the same durable dataset between independent GitHub Actions runs.
+data/master/*
+!data/master/.gitkeep
+!data/master/PEARL_master_news.csv
+
 !data/daily/.gitkeep
 !data/weekly/.gitkeep
 !data/monthly/.gitkeep
 !data/logs/.gitkeep
-!data/master/.gitkeep
 !data/qa/.gitkeep
-data/raw_archive/*
 !data/raw_archive/.gitkeep

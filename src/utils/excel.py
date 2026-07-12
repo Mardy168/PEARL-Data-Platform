@@ -49,6 +49,9 @@ def _style_sheet(ws) -> None:
 
 
 def write_excel(df: pd.DataFrame, path: str, sheet_name: str = "News") -> str:
+    # Excel worksheets support 1,048,576 rows including the header.
+    if len(df) > 1_048_575:
+        raise RuntimeError(f"Excel row limit exceeded: {len(df)} data rows")
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     prepare_excel_dataframe(df).to_excel(path, index=False, sheet_name=sheet_name)
     wb = load_workbook(path)

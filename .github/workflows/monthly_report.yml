@@ -1,4 +1,4 @@
-name: PEARL Monthly Report
+name: PEARL Monthly Report v4
 
 on:
   workflow_dispatch:
@@ -8,19 +8,23 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "0 2 1 * *" # 09:00 Cambodia on first day
+    - cron: "0 2 1 * *" # 09:00 Cambodia on first day of month
 
 permissions:
   contents: read
 
 concurrency:
-  group: pearl-monthly-report
+  group: pearl-monthly-report-v4
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TZ: Asia/Phnom_Penh
+      PEARL_DATA_ROOT: data
+      REPORT_MONTH: ${{ inputs.report_month }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,13 +37,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Validate Python syntax
-        run: python -m compileall -q .
-      - name: Run Monthly Report
-        env:
-            GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-            GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-            GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
-            GOOGLE_MASTER_FILE_ID: ${{ secrets.GOOGLE_MASTER_FILE_ID }}
+      - name: Validate Python and run tests
+        run: |
+          python -m compileall -q .
+          python -m unittest discover -s tests -v
+      - name: Run monthly report
         run: python pearl_monthly_report.py
+      - name: Upload monthly outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: PEARL-monthly-${{ github.run_id }}
+          path: |
+            data/monthly/**
+            data/logs/PEARL_monthly_*
+          if-no-files-found: error
+          retention-days: 90
