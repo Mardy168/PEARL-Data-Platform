@@ -1,4 +1,4 @@
-name: PEARL Monthly Report v4
+name: PEARL Monthly Report v4.1
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pearl-monthly-report-v4
+  group: pearl-monthly-report-v4.1
   cancel-in-progress: false
 
 jobs:

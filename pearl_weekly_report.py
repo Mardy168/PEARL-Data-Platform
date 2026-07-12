@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from src.archive.manager import archive_weekly_run
 from src.master.manager import MASTER_FILENAME, normalized_master_for_reporting
 from src.reports.common import add_news_section, configure_document
 from src.utils.dates import now_cambodia, remove_timezone_columns, rolling_window
@@ -40,6 +41,8 @@ def main() -> None:
     with log.open("w", encoding="utf-8") as handle:
         handle.write(f"Master records loaded: {len(master)}\nWeekly window: {start} to {end} (end exclusive)\n")
         handle.write(f"Unique articles: {len(weekly)}\nCambodia: {len(cambodia)}\nGlobal: {len(global_news)}\n")
+    archived = archive_weekly_run(report_date=report_date, files=[xlsx, docx, log])
+    print(archived.message)
     print(f"Weekly report completed: {len(weekly)} unique articles.")
 
 

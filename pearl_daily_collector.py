@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.archive.manager import archive_daily_run
 from src.collectors.collector import collect_all_news_with_diagnostics
 from src.master.manager import MASTER_FILENAME, combine_and_validate_master, load_master_safely, save_master_transaction
 from src.reports.daily import create_daily_word_report
@@ -19,6 +20,7 @@ DAILY_DIR = DATA_ROOT / "daily"
 QA_DIR = DATA_ROOT / "qa"
 LOG_DIR = DATA_ROOT / "logs"
 RAW_DIR = DATA_ROOT / "raw_archive"
+BACKUP_DIR = DATA_ROOT / "master_backups"
 BOUNDARY_HOUR = int(os.getenv("DAILY_BOUNDARY_HOUR", "9"))
 
 
@@ -33,7 +35,7 @@ def _status_row(today: str, run_time: str, message: str) -> pd.DataFrame:
 
 
 def main() -> None:
-    for directory in (MASTER_PATH.parent, DAILY_DIR, QA_DIR, LOG_DIR, RAW_DIR):
+    for directory in (MASTER_PATH.parent, DAILY_DIR, QA_DIR, LOG_DIR, RAW_DIR, BACKUP_DIR):
         directory.mkdir(parents=True, exist_ok=True)
     now = now_cambodia()
     today = now.strftime("%Y-%m-%d")
@@ -96,6 +98,14 @@ def main() -> None:
     with log_txt.open("w", encoding="utf-8") as handle:
         for key, value in metrics.items():
             handle.write(f"{key}: {value}\n")
+    backup_files = [BACKUP_DIR / state.backup_name] if state.backup_name else []
+    archived = archive_daily_run(
+        report_date=today,
+        daily_files=[daily_csv, daily_xlsx, daily_docx],
+        qa_files=[qa_xlsx], log_files=[log_txt], raw_files=[raw_csv],
+        master_file=MASTER_PATH, backup_files=backup_files,
+    )
+    print(archived.message)
     print(f"Daily collection completed: {unique_inside_count} unique in window, {new_count} new to master.")
 
 

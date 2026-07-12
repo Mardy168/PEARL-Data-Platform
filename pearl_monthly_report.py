@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from src.archive.manager import archive_monthly_run
 from src.master.manager import MASTER_FILENAME, normalized_master_for_reporting
 from src.reports.common import add_news_section, configure_document
 from src.utils.dates import CAMBODIA_TZ, now_cambodia, previous_month_window, remove_timezone_columns
@@ -58,6 +59,8 @@ def main() -> None:
     doc.save(docx)
     with log.open("w", encoding="utf-8") as handle:
         handle.write(f"Master records loaded: {len(master)}\nMonthly period: {start} to {end} (end exclusive)\nUnique articles: {len(monthly)}\n")
+    archived = archive_monthly_run(report_month=report_month, files=[xlsx, docx, log])
+    print(archived.message)
     print(f"Monthly report completed: {len(monthly)} unique articles.")
 
 

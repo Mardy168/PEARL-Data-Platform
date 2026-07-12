@@ -56,3 +56,7 @@ python -m unittest discover -s tests
 ## Important service-account note
 
 A service account must have Editor access to the main Drive folder. On some consumer My Drive setups, Google may reject creation of new files because service accounts have no personal storage quota. In that case, use a Google Workspace Shared Drive or switch the authentication layer to an authorized user OAuth account while keeping the same data-engineering logic.
+
+
+## Permanent local archive
+Set `PEARL_ARCHIVE_ROOT` to `D:\\001_GitHub\\PEARL-News-Archive`. GitHub-hosted runners cannot access this path; use `run_sync_github_artifacts.cmd` in Windows Task Scheduler to download successful GitHub artifacts automatically.

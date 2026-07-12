@@ -1,4 +1,4 @@
-name: PEARL Daily News Collection v4
+name: PEARL Daily News Collection v4.1
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: pearl-daily-news-v4
+  group: pearl-daily-news-v4.1
   cancel-in-progress: false
 
 jobs:

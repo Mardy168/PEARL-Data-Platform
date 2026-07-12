@@ -76,3 +76,26 @@ class CoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArchiveTests(unittest.TestCase):
+    def test_archive_tree_and_collision_preservation(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from src.archive.manager import archive_daily_run
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "sample.txt"
+            source.write_text("first", encoding="utf-8")
+            master = base / "PEARL_master_news.csv"
+            master.write_text("title,url\nA,https://example.com\n", encoding="utf-8")
+            with patch.dict(os.environ, {"PEARL_ARCHIVE_ROOT": str(base / "archive")}, clear=False):
+                first = archive_daily_run(report_date="2026-07-12", daily_files=[source], qa_files=[], log_files=[], raw_files=[], master_file=master)
+                source.write_text("second", encoding="utf-8")
+                second = archive_daily_run(report_date="2026-07-12", daily_files=[source], qa_files=[], log_files=[], raw_files=[], master_file=master)
+            self.assertTrue(first.enabled)
+            destination = base / "archive" / "daily" / "2026" / "07" / "12"
+            self.assertEqual(len(list(destination.glob("sample*.txt"))), 2)
+            self.assertTrue((base / "archive" / "master" / "PEARL_master_news.csv").exists())
