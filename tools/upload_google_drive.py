@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -123,7 +123,7 @@ def _upload_file(source: Path, remote: str, remote_root: str, destination: PureP
     target = f"{remote}:{PurePosixPath(remote_root) / destination}"
     command = [
         "rclone", "copyto", str(source), target,
-        "--checksum", "--create-empty-src-dirs",
+        "--checksum",
         "--retries", "3", "--low-level-retries", "10",
         "--timeout", "5m", "--contimeout", "30s",
         "--log-level", "INFO",
