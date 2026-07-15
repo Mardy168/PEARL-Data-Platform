@@ -1,4 +1,4 @@
-name: PEARL Monthly Report v4.1
+name: PEARL Monthly Report v5.0
 
 on:
   workflow_dispatch:
@@ -8,47 +8,70 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "0 2 1 * *" # 09:00 Cambodia on first day of month
+    - cron: "5 2 1 * *" # 09:05 Cambodia on first day of month
 
 permissions:
   contents: read
 
 concurrency:
-  group: pearl-monthly-report-v4.1
+  group: pearl-monthly-report-v5
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TZ: Asia/Phnom_Penh
       PEARL_DATA_ROOT: data
       REPORT_MONTH: ${{ inputs.report_month }}
+      RCLONE_REMOTE_NAME: pearl-drive
+      GOOGLE_DRIVE_ROOT: PEARL-News-Archive
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install dependencies
+
+      - name: Install dependencies and rclone
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y rclone
+
+      - name: Configure Google Drive
+        env:
+          RCLONE_CONFIG_SECRET: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          test -n "$RCLONE_CONFIG_SECRET" || { echo "RCLONE_CONFIG secret is missing"; exit 1; }
+          mkdir -p "$HOME/.config/rclone"
+          printf '%s' "$RCLONE_CONFIG_SECRET" > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$HOME/.config/rclone/rclone.conf"
+          rclone listremotes | grep -Fx "pearl-drive:"
+
       - name: Validate Python and run tests
         run: |
           python -m compileall -q .
           python -m unittest discover -s tests -v
+
       - name: Run monthly report
         run: python pearl_monthly_report.py
-      - name: Upload monthly outputs
+
+      - name: Upload monthly outputs directly to Google Drive
+        run: python tools/upload_google_drive.py --workflow monthly
+
+      - name: Keep temporary GitHub artifact fallback
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PEARL-monthly-${{ github.run_id }}
           path: |
             data/monthly/**
             data/logs/PEARL_monthly_*
-          if-no-files-found: error
-          retention-days: 90
+          if-no-files-found: warn
+          retention-days: 60
